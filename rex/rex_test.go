@@ -756,69 +756,6 @@ func TestRouterRedirectRoute(t *testing.T) {
 
 }
 
-/*
-
-func Query(req *http.Request, key string, defaults ...string) string {
-	v := req.URL.Query().Get(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-	return v
-}
-
-// paramInt returns the value of the parameter as an integer
-func ParamInt(req *http.Request, key string, defaults ...int) int {
-	v := req.PathValue(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
-}
-
-// queryInt returns the value of the query as an integer
-func QueryInt(req *http.Request, key string, defaults ...int) int {
-	v := Query(req, key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
-}
-
-// save file
-func SaveFile(fh *multipart.FileHeader, dst string) error {
-	src, err := fh.Open()
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, src)
-	return err
-}
-*/
-
 // test Query
 func TestRouterQuery(t *testing.T) {
 	r := rex.NewRouter()

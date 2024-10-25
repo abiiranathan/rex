@@ -1,3 +1,26 @@
+/*
+Package rex (go router) implements a minimalistic but robust http router based on the standard go 1.22
+enhanced routing capabilities in the `http.ServeMux`.
+
+It adds features like middleware support, helper methods for defining routes,
+template rendering with automatic template inheritance (of a base template).
+
+It also has a BodyParser that decodes json, xml, url-encoded and multipart forms
+based on content type. Form parsing supports all standard go types(and their pointers)
+and slices of standard types.
+It also supports custom types that implement the `rex.FormScanner` interface.
+
+rex supports single page application routing with a dedicated method `r.SPAHandler`
+that serves the index.html file for all routes that do not match a file or directory in the root directory of the SPA.
+
+The router also supports route groups and subgroups with middleware
+that can be applied to the entire group or individual routes.
+It has customizable built-in middleware for logging using the slog package,
+panic recovery, etag, cors, basic auth and jwt middlewares.
+
+More middlewares can be added by implementing the Middleware type,
+a standard function that wraps rex.Handler.
+*/
 package rex
 
 import (
@@ -21,11 +44,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/go-playground/locales/en"
+	ut "github.com/go-playground/universal-translator"
+	"github.com/go-playground/validator/v10"
+	en_translations "github.com/go-playground/validator/v10/translations/en"
 )
 
 var (
 	// StrictHome when set to true, only the root path will be matched
-	StrictHome = false
+	StrictHome = true
 
 	// NoTrailingSlash when set to true, trailing slashes will be removed
 	NoTrailingSlash = true
@@ -139,6 +167,12 @@ type Router struct {
 	// The request parameters are not available, since they are populated by the http.ServeMux
 	// when the request is matched to a route. So calling r.PathValue() will return "".
 	NotFoundHandler http.Handler
+
+	// Validator instance
+	validator *validator.Validate
+
+	// universal translator
+	translator ut.Translator
 }
 
 type route struct {
@@ -153,6 +187,8 @@ type RouterOption func(*Router)
 // NewRouter creates a new router with the given options.
 // The router wraps the http.DefaultServeMux and adds routing and middleware
 // capabilities.
+// The router also performs automatic body parsing and struct validation
+// with the go-playground/validator/v10 package.
 func NewRouter(options ...RouterOption) *Router {
 	r := &Router{
 		mux:                http.NewServeMux(),
@@ -164,7 +200,36 @@ func NewRouter(options ...RouterOption) *Router {
 		groups:             make(map[string]*Group),
 		globalMiddlewares:  []Middleware{},
 		template:           nil,
+		validator:          validator.New(validator.WithRequiredStructEnabled()),
+
+		// Global error handler function.
+		errorHandler: func(ctx *Context, err error) {
+			if ve, ok := err.(validator.ValidationErrors); ok {
+				HandleValidationErrors(ctx, ve)
+				return
+			}
+
+			if fe, ok := err.(FormError); ok {
+				HandleFormErrors(ctx, fe)
+				return
+			}
+
+			log.Println("handling generic errors")
+
+			// Default to plain text
+			ctx.WriteHeader(http.StatusInternalServerError)
+			ctx.Write([]byte(err.Error()))
+		},
 	}
+
+	// Create translator
+	en := en.New()
+	uni := ut.New(en, en)
+	trans, _ := uni.GetTranslator("en")
+
+	// Connect ut to our validator
+	en_translations.RegisterDefaultTranslations(r.validator, trans)
+	r.translator = trans
 
 	for _, option := range options {
 		option(r)
@@ -960,4 +1025,15 @@ func (c *Context) IP() (string, error) {
 		return ip, nil
 	}
 	return "", errors.New("IP not found")
+}
+
+func (c *Context) IsValidationError(err error) bool {
+	if _, ok := err.(validator.ValidationErrors); ok {
+		return true
+	}
+	return false
+}
+
+func (c *Context) TranslateErrors(errs validator.ValidationErrors) validator.ValidationErrorsTranslations {
+	return errs.Translate(c.router.translator)
 }

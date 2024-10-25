@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type CustomStruct struct {
@@ -311,7 +313,7 @@ func TestSetFieldMultipartFormEmpty(t *testing.T) {
 	// send an actual form using httptest
 	r := NewRouter()
 	r.POST("/test", func(c *Context) error {
-		var test TestStruct
+		test := TestStruct{}
 		if err := c.BodyParser(&test); err != nil {
 			t.Errorf("BodyParser() error = %v", err)
 			return err
@@ -670,4 +672,53 @@ func TestParseTimeFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidation(t *testing.T) {
+	type User struct {
+		Email    string `validate:"required,email"`
+		Username string `validate:"min=10"`
+		Password string `validate:"required,min=10"`
+	}
+
+	r := NewRouter()
+
+	r.POST("/test", func(c *Context) error {
+		test := User{}
+		err := c.BodyParser(&test)
+		ve, ok := err.(validator.ValidationErrors)
+		if !ok {
+			t.Fatalf("expected validation errors")
+		}
+
+		if len(ve) != 3 {
+			t.Errorf("expected 3 validation errors, got %d", len(ve))
+		}
+
+		// The error handler will translate these errors and render them in html
+		return err
+	})
+
+	// send a multipart form
+	formData := url.Values{
+		"email":    {"invalid_email"},
+		"username": {""},
+		"password": {"password"},
+	}
+
+	// Encode the form data
+	formEncoded := formData.Encode()
+
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(formEncoded))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("BodyParser() status = %v, want %v", w.Code, http.StatusBadRequest)
+	}
+
+	fmt.Println(w.Body.String())
+
 }

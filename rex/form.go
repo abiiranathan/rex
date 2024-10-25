@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 const (
@@ -26,12 +28,13 @@ const (
 // FormError represents an error encountered during body parsing.
 type FormError struct {
 	// The original error encountered.
-	Err error
+	Err error `json:"err,omitempty"`
+
 	// The kind of error encountered.
-	Kind FormErrorKind
+	Kind FormErrorKind `json:"kind,omitempty"`
 
 	// Struct field name causing error.
-	Field string
+	Field string `json:"field,omitempty"`
 }
 
 // FormErrorKind represents the kind of error encountered during body parsing.
@@ -99,6 +102,12 @@ func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
 				Kind: ParseError,
 			}
 		}
+
+		// validate the struct here
+		if c.router != nil && c.router.validator != nil {
+			err := c.router.validator.Struct(v)
+			return err
+		}
 		return nil
 	} else if contentType == ContentTypeUrlEncoded || contentType == ContentTypeMultipartForm {
 		var form *multipart.Form
@@ -146,9 +155,20 @@ func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
 			}
 		}
 
-		err = parseFormData(data, v, timezone)
+		if len(data) == 0 {
+			// No fields for validate
+			return nil
+		}
+
+		err = c.parseFormData(data, v, timezone)
 		if err != nil {
 			// propagate the error
+			return err
+		}
+
+		// validate the struct here
+		if c.router != nil && c.router.validator != nil {
+			err := c.router.validator.Struct(v)
 			return err
 		}
 		return nil
@@ -160,6 +180,11 @@ func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
 				Err:  err,
 				Kind: ParseError,
 			}
+		}
+		// validate the struct here
+		if c.router != nil && c.router.validator != nil {
+			err := c.router.validator.Struct(v)
+			return err
 		}
 		return nil
 	} else {
@@ -184,7 +209,7 @@ func SnakeCase(s string) string {
 // Parses the form data and stores the result in v.
 // Default tag name is "form". You can specify a different tag name using the tag argument.
 // Forexample "query" tag name will parse the form data using the "query" tag.
-func parseFormData(data map[string]interface{}, v interface{}, timezone *time.Location, tag ...string) error {
+func (c *Context) parseFormData(data map[string]interface{}, v interface{}, timezone *time.Location, tag ...string) error {
 	var tagName string = "form"
 	if len(tag) > 0 {
 		tagName = tag[0]
@@ -199,6 +224,8 @@ func parseFormData(data map[string]interface{}, v interface{}, timezone *time.Lo
 		if tag == "" {
 			// try json tag name and fallback to snake case
 			tag = field.Tag.Get("json")
+
+			// If there is no json tag, use the snake_case of the field name
 			if tag == "" {
 				tag = SnakeCase(field.Name)
 			}
@@ -214,19 +241,17 @@ func parseFormData(data map[string]interface{}, v interface{}, timezone *time.Lo
 
 		required := slices.Contains(tagList, "required") || field.Tag.Get("required") == "true"
 		value, ok := data[tag]
-		if !ok {
-			if required {
-				return FormError{
-					Err:   fmt.Errorf("field '%s' is required", tag),
-					Kind:  RequiredFieldMissing,
-					Field: field.Name,
-				}
+		if !ok && required {
+			return FormError{
+				Err:   fmt.Errorf("field '%s' is required", tag),
+				Kind:  RequiredFieldMissing,
+				Field: field.Name,
 			}
-			continue
 		}
 
 		// set the value
 		fieldVal := rv.Field(i)
+
 		if err := setField(field.Name, fieldVal, value, timezone); err != nil {
 			return FormError{
 				Err:   err,
@@ -239,6 +264,10 @@ func parseFormData(data map[string]interface{}, v interface{}, timezone *time.Lo
 }
 
 func setField(name string, fieldVal reflect.Value, value interface{}, timezone ...*time.Location) error {
+	if value == nil {
+		return nil
+	}
+
 	tz := DefaultTimezone
 	if len(timezone) > 0 {
 		tz = timezone[0]
@@ -255,23 +284,26 @@ func setField(name string, fieldVal reflect.Value, value interface{}, timezone .
 
 	switch fieldVal.Kind() {
 	case reflect.String:
+		v := value.(any)
+		fmt.Printf("Value :%v\n", v)
+
 		fieldVal.SetString(value.(string))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		v, err := strconv.ParseInt(value.(string), 10, 64)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "invalid int value: %v", value)
 		}
 		fieldVal.SetInt(v)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		v, err := strconv.ParseUint(value.(string), 10, 64)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "invalid uint value: %v", value)
 		}
 		fieldVal.SetUint(v)
 	case reflect.Float32, reflect.Float64:
 		v, err := strconv.ParseFloat(value.(string), 64)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "invalid float32 value: %v", v)
 		}
 		fieldVal.SetFloat(v)
 	case reflect.Bool:
@@ -283,7 +315,7 @@ func setField(name string, fieldVal reflect.Value, value interface{}, timezone .
 			} else if value.(string) == "off" {
 				v = false
 			} else {
-				return err
+				return errors.Wrapf(err, "invalid boolean value: %v", value)
 			}
 		}
 		fieldVal.SetBool(v)
@@ -529,7 +561,18 @@ func (c *Context) QueryParser(v interface{}, tag ...string) error {
 			dataMap[k] = v // array of values or empty array
 		}
 	}
-	return parseFormData(dataMap, v, time.UTC, tagName)
+
+	err := c.parseFormData(dataMap, v, time.UTC, tagName)
+	if err != nil {
+		return errors.Wrap(err, "query parser error")
+	}
+
+	// validate the struct here
+	if c.router != nil && c.router.validator != nil {
+		err := c.router.validator.Struct(v)
+		return err
+	}
+	return nil
 }
 
 // Parse time from string using specified timezone. If timezone is nil,
