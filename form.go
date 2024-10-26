@@ -43,12 +43,16 @@ type FormErrorKind string
 const (
 	// InvalidContentType indicates an unsupported content type.
 	InvalidContentType FormErrorKind = "invalid_content_type"
+
 	// InvalidStructPointer indicates that the provided v is not a pointer to a struct.
 	InvalidStructPointer FormErrorKind = "invalid_struct_pointer"
+
 	// RequiredFieldMissing indicates that a required field was not found.
 	RequiredFieldMissing FormErrorKind = "required_field_missing"
+
 	// UnsupportedType indicates that an unsupported type was encountered.
 	UnsupportedType FormErrorKind = "unsupported_type"
+
 	// ParseError indicates that an error occurred during parsing.
 	ParseError FormErrorKind = "parse_error"
 )
@@ -59,6 +63,23 @@ func (e FormError) Error() string {
 		return fmt.Sprintf("BodyParser error: field=%q kind=%s, err=%s", wrappedError.Field, wrappedError.Kind, wrappedError.Err)
 	}
 	return fmt.Sprintf("BodyParser error: field=%q kind=%s, err=%s", e.Field, e.Kind, e.Err)
+}
+
+// MarshalJSON marshals the error to JSON.
+func (e FormError) MarshalJSON() ([]byte, error) {
+	if wrappedError, ok := e.Err.(FormError); ok {
+		return json.Marshal(map[string]interface{}{
+			"err":   wrappedError.Err.Error(),
+			"kind":  wrappedError.Kind,
+			"field": wrappedError.Field,
+		})
+	}
+
+	return json.Marshal(map[string]interface{}{
+		"err":   e.Err.Error(),
+		"kind":  e.Kind,
+		"field": e.Field,
+	})
 }
 
 var DefaultTimezone = time.UTC
@@ -153,11 +174,6 @@ func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
 			} else {
 				data[k] = v // array of values
 			}
-		}
-
-		if len(data) == 0 {
-			// No fields for validate
-			return nil
 		}
 
 		err = c.parseFormData(data, v, timezone)
@@ -284,9 +300,6 @@ func setField(name string, fieldVal reflect.Value, value interface{}, timezone .
 
 	switch fieldVal.Kind() {
 	case reflect.String:
-		v := value.(any)
-		fmt.Printf("Value :%v\n", v)
-
 		fieldVal.SetString(value.(string))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		v, err := strconv.ParseInt(value.(string), 10, 64)
@@ -622,7 +635,9 @@ func ParseTime(v string, timezone *time.Location) (time.Time, error) {
 	return parsedTime, nil
 }
 
-func ParseTimeFormat(value string, format string, timezone ...string) (time.Time, error) {
+// ParseTimeFormat parses a time string using the specified format and timezone.
+// If timezone is not provided, UTC is used.
+func ParseTimeFormat(value string, layout string, timezone ...string) (time.Time, error) {
 	tz := "UTC"
 	if len(timezone) > 0 {
 		tz = timezone[0]
@@ -639,7 +654,7 @@ func ParseTimeFormat(value string, format string, timezone ...string) (time.Time
 		}
 	}
 
-	parsedTime, err = time.ParseInLocation(format, value, loc)
+	parsedTime, err = time.ParseInLocation(layout, value, loc)
 	if err != nil {
 		return time.Time{}, err
 	}

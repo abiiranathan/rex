@@ -2,6 +2,7 @@ package rex_test
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -16,7 +17,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 )
 
 func TestRouterServeHTTP(t *testing.T) {
@@ -426,8 +427,11 @@ func TestRouterChainMiddleware(t *testing.T) {
 
 // test render with a base layout
 func TestRouterRenderWithBaseLayout(t *testing.T) {
-	templ, err := rex.ParseTemplates("../cmd/server/templates",
-		template.FuncMap{"upper": strings.ToUpper}, ".html")
+	templ, err := rex.ParseTemplates(
+		"cmd/server/templates",
+		template.FuncMap{"upper": strings.ToUpper},
+		".html",
+	)
 
 	if err != nil {
 		panic(err)
@@ -541,6 +545,48 @@ func TestRouterStatic(t *testing.T) {
 
 }
 
+func TestRouterStaticFS(t *testing.T) {
+	dirname, err := os.MkdirTemp("", "static")
+	if err != nil {
+		t.Fatalf("could not create temp dir: %v", err)
+	}
+	defer os.RemoveAll(dirname)
+
+	file := filepath.Join(dirname, "test.txt")
+	err = os.WriteFile(file, []byte("hello world"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := rex.NewRouter()
+	r.StaticFS("/static", http.Dir(dirname))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/static/notfound.txt", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", w.Code)
+	}
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/static/test.txt", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	data, err := io.ReadAll(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "hello world" {
+		t.Errorf("expected hello world, got %s", string(data))
+	}
+}
+
 func TestRouterFile(t *testing.T) {
 	// create a temporary directory for the views
 	dirname, err := os.MkdirTemp("", "static")
@@ -573,103 +619,6 @@ func TestRouterFile(t *testing.T) {
 
 	if string(data) != "hello world" {
 		t.Errorf("expected hello world, got %s", string(data))
-	}
-}
-
-// Test route groups
-func TestRouterGroup(t *testing.T) {
-	r := rex.NewRouter()
-	admin := r.Group("/admin")
-
-	admin.Get("/home", func(c *rex.Context) error {
-		return c.String("test")
-	})
-
-	admin.Get("/users", func(c *rex.Context) error {
-		return c.String("test2")
-	})
-
-	// test /admin/test
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/admin/home", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
-
-	if w.Body.String() != "test" {
-		t.Errorf("expected test, got %s", w.Body.String())
-	}
-
-	// test /admin/test2
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("GET", "/admin/users", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
-
-	if w.Body.String() != "test2" {
-		t.Errorf("expected test2, got %s", w.Body.String())
-	}
-}
-
-// test groups with middleware
-func TestRouterGroupMiddleware(t *testing.T) {
-	r := rex.NewRouter()
-	admin := r.Group("/admin", func(next rex.HandlerFunc) rex.HandlerFunc {
-		return func(c *rex.Context) error {
-			c.Set("admin", "admin middleware")
-			return next(c)
-		}
-	})
-
-	admin.Get("/test", func(c *rex.Context) error {
-		admin, ok := c.Get("admin")
-		if !ok {
-			c.WriteHeader(http.StatusInternalServerError)
-			return c.String("no admin")
-		}
-		return c.String(admin.(string))
-	})
-
-	// test /admin/test
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/admin/test", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
-
-	if w.Body.String() != "admin middleware" {
-		t.Errorf("expected admin middleware, got %s", w.Body.String())
-	}
-}
-
-// test nested groups
-func TestRouterNestedGroup(t *testing.T) {
-	r := rex.NewRouter()
-	admin := r.Group("/admin")
-	users := admin.Group("/users")
-
-	users.Get("/test", func(c *rex.Context) error {
-		return c.String("test")
-	})
-
-	// test /admin/users/test
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/admin/users/test", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
-	}
-
-	if w.Body.String() != "test" {
-		t.Errorf("expected test, got %s", w.Body.String())
 	}
 }
 
@@ -853,7 +802,7 @@ func BenchmarkRouterFullCycle(b *testing.B) {
 }
 
 func TestRouterExecuteTemplate(t *testing.T) {
-	templ, err := rex.ParseTemplates("../cmd/server/templates",
+	templ, err := rex.ParseTemplates("cmd/server/templates",
 		template.FuncMap{"upper": strings.ToUpper}, ".html")
 
 	if err != nil {
@@ -979,5 +928,252 @@ func TestRouterFaviconFS(t *testing.T) {
 
 	if string(data) != "hello world" {
 		t.Errorf("expected hello world, got %s", string(data))
+	}
+}
+
+// Test serve minified files if available
+func TestRouterServeMinifiedAssets(t *testing.T) {
+	dirname, err := os.MkdirTemp("", "assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dirname)
+
+	file := filepath.Join(dirname, "test.txt")
+	err = os.WriteFile(file, []byte("hello world"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	minFile := filepath.Join(dirname, "test.min.txt")
+	err = os.WriteFile(minFile, []byte("minified"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rex.ServeMinified = true
+	rex.MinExtensions = append(rex.MinExtensions, ".txt")
+
+	r := rex.NewRouter()
+
+	r.StaticFS("/static", http.Dir(dirname))
+
+	w := httptest.NewRecorder()
+
+	// we should get the minified file
+	req := httptest.NewRequest("GET", "/static/test.txt", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	data, err := io.ReadAll(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "minified" {
+		t.Errorf("expected minified, got %s", string(data))
+	}
+}
+
+func TestRouterServeMinifiedAssetsStatic(t *testing.T) {
+	dirname, err := os.MkdirTemp("", "assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dirname)
+
+	file := filepath.Join(dirname, "test.txt")
+	err = os.WriteFile(file, []byte("hello world"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	minFile := filepath.Join(dirname, "test.min.txt")
+	err = os.WriteFile(minFile, []byte("minified"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rex.ServeMinified = true
+	rex.MinExtensions = append(rex.MinExtensions, ".txt")
+
+	r := rex.NewRouter()
+
+	r.Static("/static", dirname, 60)
+
+	w := httptest.NewRecorder()
+
+	// we should get the minified file
+	req := httptest.NewRequest("GET", "/static/test.txt", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	data, err := io.ReadAll(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "minified" {
+		t.Errorf("expected minified, got %s", string(data))
+	}
+}
+
+func TestRegisteredRoutes(t *testing.T) {
+	r := rex.NewRouter()
+
+	r.GET("/test", func(c *rex.Context) error {
+		return c.String("test")
+	})
+
+	r.GET("/test2", func(c *rex.Context) error {
+		return c.String("test2")
+	})
+
+	r.GET("/test3", func(c *rex.Context) error {
+		return c.String("test3")
+	})
+
+	r.POST("/test4", func(c *rex.Context) error {
+		return c.String("test4")
+	})
+
+	// test registered routes
+	routes := r.RegisteredRoutes()
+	if len(routes) != 4 {
+		t.Errorf("expected 4 routes, got %d", len(routes))
+	}
+
+	for _, route := range routes {
+		if !strings.HasPrefix(route.Path, "/test") {
+			t.Errorf("expected path to start with /test, got %s", route.Path)
+		}
+	}
+}
+
+func TestSPAHandler(t *testing.T) {
+	temp := t.TempDir()
+
+	// Create a simple SPA with 4 files.
+	// - index.html
+	// - app.js
+	// - app.css
+	index := filepath.Join(temp, "index.html")
+	err := os.WriteFile(index, []byte(`<html><head><link rel="stylesheet" href="/app.css"></head><body><script src="/app.js"></script></body></html>`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appjs := filepath.Join(temp, "app.js")
+	err = os.WriteFile(appjs, []byte(`console.log("Hello World!")`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appcss := filepath.Join(temp, "app.css")
+	err = os.WriteFile(appcss, []byte(`body { background-color: #f0f0f0; }`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := rex.NewRouter()
+
+	options := []rex.SPAOption{
+		rex.WithCacheControl("public max-age=3600"),
+		rex.WithSkipFunc(func(r *http.Request) bool {
+			// Return 404 for this pattern.
+			return r.URL.Path == "/non-existent-file"
+		}),
+	}
+
+	r.SPA("/", "index.html", http.Dir(temp), options...)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	// fetch js
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/app.js", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	// fetch css
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/app.css", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	// fetch non-existent file
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/non-existent", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 202, got %d", w.Code)
+	}
+
+	// we expect content of index.html
+	data, err := io.ReadAll(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fileContent, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != string(fileContent) {
+		t.Errorf("expected %s, got %s", string(fileContent), string(data))
+	}
+
+	// non-existent file with extension should return 404
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/non-existent.js", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", w.Code)
+	}
+
+	// test with skip func
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/non-existent-file", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", w.Code)
+	}
+
+}
+
+//go:embed cmd/server/templates
+var templates embed.FS
+
+func TestCreateFileSystem(t *testing.T) {
+	fs := rex.CreateFileSystem(templates, "cmd/server/templates")
+	if fs == nil {
+		t.Fatal("expected a file system")
+	}
+
+	_, err := fs.Open("home.html")
+	if err != nil {
+		t.Error(err)
 	}
 }

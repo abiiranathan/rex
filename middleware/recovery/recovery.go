@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 )
 
 // Panic recovery middleware.

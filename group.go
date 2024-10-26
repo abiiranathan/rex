@@ -1,6 +1,8 @@
 package rex
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // Group is a collection of routes with a common prefix.
 type Group struct {
@@ -56,4 +58,12 @@ func (g *Group) Group(prefix string, middlewares ...Middleware) *Group {
 	return g.router.Group(g.prefix+prefix, append(g.middlewares, middlewares...)...)
 }
 
-// TODO: Add more methods for other HTTP methods and static files.
+// Static serves files from the given file system root.
+func (g *Group) Static(prefix, dir string, maxAge ...int) {
+	g.router.Static(g.prefix+prefix, dir, maxAge...)
+}
+
+// StaticFs serves files from the given file system.
+func (g *Group) StaticFs(prefix string, fs http.FileSystem, maxAge ...int) {
+	g.router.StaticFS(g.prefix+prefix, fs, maxAge...)
+}

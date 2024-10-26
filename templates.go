@@ -28,9 +28,6 @@ func BaseLayout(baseLayout string) RouterOption {
 // ErrorTemplate sets the error template for the router.
 // If set, this template will be used to render errors.
 // It is passed "error", "status", "status_text" in its context.
-// Example:
-//
-//	r := rex.NewRouter(rex.ErrorTemplate("errors/500.html"))
 func ErrorTemplate(errorTemplate string) RouterOption {
 	return func(r *Router) {
 		r.errorTemplate = errorTemplate
@@ -165,7 +162,6 @@ func (c *Context) Render(name string, data Map) error {
 		for k, v := range c.locals {
 			data[fmt.Sprintf("%v", k)] = v
 		}
-
 	}
 	return c.renderTemplate(name, data)
 }
@@ -213,7 +209,7 @@ func ParseTemplates(rootDir string, funcMap template.FuncMap, suffix ...string) 
 
 	cleanRoot := filepath.Clean(rootDir)
 	pfx := len(cleanRoot) + 1
-	root := template.New("") // Create a new template
+	root := template.New("")
 
 	err := filepath.WalkDir(cleanRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

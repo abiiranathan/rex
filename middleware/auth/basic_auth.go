@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 )
 
 // Basic Auth middleware.

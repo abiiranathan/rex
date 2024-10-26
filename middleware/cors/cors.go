@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 )
 
 // CORSOptions is the configuration for the CORS middleware.

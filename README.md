@@ -11,7 +11,7 @@
   - URL-encoded and multipart forms  
   Works with standard Go types, pointers, slices, and custom types implementing the `rex.FormScanner` interface.
 - **SPA Support**:  
-  Use `r.SPAHandler` to serve `index.html` for all unmatched routes (Single Page Application mode).
+  Use `r.SPA` to serve a single-page application.
 - **Route Grouping and Subgroups**:  
   Apply middleware to groups or individual routes for better organization.
 - **Built-in Middleware**:
@@ -44,10 +44,6 @@ go get -u github.com/abiiranathan/rex
 This example shows how to implement a custom type that satisfies the `FormScanner` interface.
 
 ```go
-type FormScanner interface {
-	FormScan(value interface{}) error
-}
-
 type Date time.Time // Date in format YYYY-MM-DD
 
 // FormScan implements the FormScanner interface.

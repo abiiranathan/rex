@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"text/template"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 	"github.com/gorilla/sessions"
 )
 

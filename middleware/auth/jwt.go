@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 	"github.com/golang-jwt/jwt/v5"
 )
 

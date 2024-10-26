@@ -24,26 +24,19 @@ a standard function that wraps rex.Handler.
 package rex
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"encoding/xml"
-	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"io/fs"
-	"log"
-	"mime/multipart"
-	"net"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
@@ -60,6 +53,13 @@ var (
 
 	// name of the template content block
 	contentBlock = "Content"
+
+	// Serve minified files if present instead of original file.
+	// This applies to StaticFS, Static functions.
+	ServeMinified = false
+
+	// MinExtensions is the slice of file extensions for which minified files are served.
+	MinExtensions = []string{".js", ".css"}
 )
 
 // HandlerFunc is the signature for route handlers that can return errors
@@ -67,6 +67,9 @@ type HandlerFunc func(c *Context) error
 
 // Middleware function that takes a HandlerFunc and returns a HandlerFunc
 type Middleware func(HandlerFunc) HandlerFunc
+
+// Generic type for response data
+type Map map[string]any
 
 // Convert http.HandlerFunc to HandlerFunc
 func WrapFunc(h http.HandlerFunc) HandlerFunc {
@@ -102,47 +105,7 @@ func (h HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		locals:   make(map[any]any),
 	}
 
-	if err := h(ctx); err != nil {
-		log.Println(err)
-	}
-}
-
-// Context represents the context of the current HTTP request
-type Context struct {
-	Request  *http.Request
-	Response *ResponseWriter
-	router   *Router
-	locals   map[any]any
-	mu       sync.RWMutex
-}
-
-// ResponseWriter wraps http.ResponseWriter with additional functionality
-type ResponseWriter struct {
-	writer     http.ResponseWriter
-	status     int
-	size       int
-	statusSent bool
-}
-
-// ResponseWriter interface
-func (rw *ResponseWriter) Header() http.Header {
-	return rw.writer.Header()
-}
-
-// SetHeader sets a header in the response
-func (c *Context) SetHeader(key, value string) {
-	c.Response.Header().Set(key, value)
-}
-
-// GetHeader returns the status code of the response
-func GetHeader(r *http.Request, key string) string {
-	return r.Header.Get(key)
-}
-
-// SetStatus sets the status code of the response
-func (c *Context) SetStatus(status int) error {
-	c.Response.WriteHeader(status)
-	return nil
+	h(ctx)
 }
 
 // Router is the main router structure
@@ -173,6 +136,9 @@ type Router struct {
 
 	// universal translator
 	translator ut.Translator
+
+	// Logger
+	logger *slog.Logger
 }
 
 type route struct {
@@ -184,9 +150,21 @@ type route struct {
 // Router option a function option for configuring the router.
 type RouterOption func(*Router)
 
+// Replace the default slog.Logger with a custom logger.
+func WithLogger(logger *slog.Logger) RouterOption {
+	if logger == nil {
+		panic("logger cannot be nil")
+	}
+
+	return func(r *Router) {
+		r.logger = logger
+	}
+}
+
 // NewRouter creates a new router with the given options.
 // The router wraps the http.DefaultServeMux and adds routing and middleware
 // capabilities.
+// The router uses slog for logging. The default log level is Error with JSON formatting.
 // The router also performs automatic body parsing and struct validation
 // with the go-playground/validator/v10 package.
 func NewRouter(options ...RouterOption) *Router {
@@ -197,10 +175,14 @@ func NewRouter(options ...RouterOption) *Router {
 		baseLayout:         "",
 		contentBlock:       contentBlock,
 		viewsFs:            nil,
+		template:           nil,
 		groups:             make(map[string]*Group),
 		globalMiddlewares:  []Middleware{},
-		template:           nil,
 		validator:          validator.New(validator.WithRequiredStructEnabled()),
+		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			AddSource: false,
+			Level:     slog.LevelError,
+		})),
 
 		// Global error handler function.
 		errorHandler: func(ctx *Context, err error) {
@@ -214,11 +196,12 @@ func NewRouter(options ...RouterOption) *Router {
 				return
 			}
 
-			log.Println("handling generic errors")
-
 			// Default to plain text
 			ctx.WriteHeader(http.StatusInternalServerError)
 			ctx.Write([]byte(err.Error()))
+
+			// Log the error
+			ctx.router.logger.Debug("ERROR", "error", err, "status", ctx.Response.Status(), "path", ctx.Request.URL.Path)
 		},
 	}
 
@@ -237,8 +220,20 @@ func NewRouter(options ...RouterOption) *Router {
 	return r
 }
 
-// Generic type for response data
-type Map map[string]any
+// RegisterValidation adds a validation with the given tag
+//
+// NOTES: - if the key already exists, the previous validation function will be replaced.
+// - this method is not thread-safe it is intended that these all be registered prior
+// to any validation
+func (r *Router) RegisterValidation(tag string, fn validator.Func) {
+	r.validator.RegisterValidation(tag, fn, true)
+}
+
+// RegisterValidationCtx does the same as RegisterValidation on accepts a
+// FuncCtx validation allowing context.Context validation support.
+func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) {
+	r.validator.RegisterValidationCtx(tag, fn, true)
+}
 
 // Set error handler for centralized error handling
 func (r *Router) SetErrorHandler(handler func(*Context, error)) {
@@ -351,227 +346,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.mux.ServeHTTP(w, req)
 }
 
-// Context helper methods
-// JSON sends a JSON response
-func (c *Context) JSON(data interface{}) error {
-	c.Response.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(c.Response).Encode(data)
-}
-
-// XML sends an XML response
-func (c *Context) XML(data interface{}) error {
-	c.Response.Header().Set("Content-Type", "application/xml")
-	return xml.NewEncoder(c.Response).Encode(data)
-}
-
-// String sends a string response
-func (c *Context) String(format string, values ...interface{}) error {
-	c.Response.Header().Set("Content-Type", "text/plain")
-	_, err := fmt.Fprintf(c.Response, format, values...)
-	return err
-}
-
-// Returns the header content type stripping everything after ; like
-// charset or form boundary in multipart/form-data forms.
-func (c *Context) ContentType() string {
-	return strings.Split(c.Request.Header.Get("Content-Type"), ";")[0]
-}
-
-// Send HTML response.
-func (c *Context) HTML(html string) error {
-	c.Response.Header().Set("Content-Type", "text/html")
-	_, err := c.Response.Write([]byte(html))
-	return err
-}
-
-func (c *Context) WriteHeader(status int) error {
-	c.Response.WriteHeader(status)
-	return nil
-}
-
-// Write sends a raw response
-func (c *Context) Write(data []byte) (int, error) {
-	return c.Response.Write(data)
-}
-
-// Param gets a path parameter value by name from the request.
-// If the parameter is not found, it checks the redirect options.
-func (c *Context) Param(name string) string {
-	p := c.Request.PathValue(name)
-	if p == "" {
-		// check redirect params
-		opts, ok := c.redirectOptions()
-		if ok {
-			p = opts.Params[name]
-		}
-	}
-	return p
-}
-
-// paramInt returns the value of the parameter as an integer
-// If the parameter is not found, it checks the redirect options.
-func (c *Context) ParamInt(key string, defaults ...int) int {
-	v := c.Param(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
-}
-
-// Query returns the value of the query as a string.
-// If the query is not found, it checks the redirect options.
-func (c *Context) Query(key string, defaults ...string) string {
-	v := c.Request.URL.Query().Get(key)
-	if v == "" {
-		// check redirect query params
-		opts, ok := c.redirectOptions()
-		if ok {
-			v = opts.QueryParams[key]
-		}
-	}
-
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-	return v
-}
-
-// queryInt returns the value of the query as an integer
-// If the query is not found, it checks the redirect options.
-func (c *Context) QueryInt(key string, defaults ...int) int {
-	v := c.Query(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
-}
-
-// Set stores a value in the context
-func (c *Context) Set(key interface{}, value interface{}) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.locals[key] = value
-
-	// Also set the value in the request context
-	ctx := context.WithValue(c.Request.Context(), key, value)
-	*c.Request = *c.Request.WithContext(ctx)
-
-}
-
-// Get retrieves a value from the context
-func (c *Context) Get(key interface{}) (value interface{}, exists bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	value, exists = c.locals[key]
-	return
-}
-
-// Locals returns the context values
-func (c *Context) Locals() map[any]any {
-	return c.locals
-}
-
-func (w *ResponseWriter) WriteHeader(status int) {
-	if w.statusSent {
-		return
-	}
-	w.status = status
-	w.writer.WriteHeader(status)
-	w.statusSent = true
-}
-
-func (w *ResponseWriter) Write(b []byte) (int, error) {
-	if !w.statusSent {
-		w.WriteHeader(http.StatusOK)
-	}
-	size, err := w.writer.Write(b)
-	w.size += size
-	return size, err
-}
-
-func (w *ResponseWriter) Status() int {
-	return w.status
-}
-
-func (w *ResponseWriter) Size() int {
-	return w.size
-}
-
-// Implement additional interfaces
-func (w *ResponseWriter) Flush() {
-	if f, ok := w.writer.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := w.writer.(http.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, fmt.Errorf("hijacking not supported")
-}
-
-func (w *ResponseWriter) ReadFrom(r io.Reader) (n int64, err error) {
-	if !w.statusSent {
-		// The status will be StatusOK if WriteHeader has not been called yet
-		w.WriteHeader(http.StatusOK)
-	}
-
-	n, err = io.Copy(w.writer, r)
-	w.size += int(n)
-	return
-}
-
-// Satisfy http.ResponseController support (Go 1.20+)
-func (w *ResponseWriter) Unwrap() http.ResponseWriter {
-	return w.writer
-}
-
-// Redirects the request to the given url.
-// Default status code is 303 (http.StatusSeeOther)
-func (c *Context) Redirect(url string, status ...int) error {
-	var statusCode = http.StatusSeeOther
-	if len(status) > 0 {
-		statusCode = status[0]
-	}
-	http.Redirect(c.Response, c.Request, url, statusCode)
-	return nil
-}
-
-// save file from multipart form to disk
-func (c *Context) SaveFile(fh *multipart.FileHeader, dst string) error {
-	src, err := fh.Open()
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, src)
-	return err
-}
-
 // chain of middlewares
 func (r *Router) chain(middlewares []Middleware, handler HandlerFunc) HandlerFunc {
 	if len(middlewares) == 0 {
@@ -586,6 +360,46 @@ func (r *Router) chain(middlewares []Middleware, handler HandlerFunc) HandlerFun
 		wrapped = middlewares[i](wrapped)
 	}
 	return wrapped
+}
+
+func staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		path := filepath.Join(dir, strings.TrimPrefix(req.URL.Path, prefix))
+		ext := filepath.Ext(path)
+
+		setCacheHeaders := func() {
+			if cacheDuration > 0 {
+				// Set cache control headers with the specified maxAge
+				w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(cacheDuration))
+			}
+		}
+
+		if ServeMinified && slices.Contains(MinExtensions, ext) {
+			stat, err := os.Stat(path)
+			if err != nil || stat.IsDir() {
+				http.NotFound(w, req)
+				return
+			}
+
+			// TODO: Allow user to customize the minified extension based on the file type
+			// This will allow for serving minified files with different extensions.
+			// e.g .min.js, .min.css, .tar.gz, .br etc.
+			minifiedPath := strings.TrimSuffix(path, ext) + ".min" + ext
+
+			// Check for the minified version of the file
+			stat, err = os.Stat(minifiedPath)
+			if err == nil && !stat.IsDir() {
+				http.ServeFile(w, req, minifiedPath)
+				setCacheHeaders()
+				return
+			}
+		}
+
+		setCacheHeaders()
+
+		http.ServeFile(w, req, path)
+	}
+
 }
 
 // Serve static assests at prefix in the directory dir.
@@ -603,49 +417,12 @@ func (r *Router) Static(prefix, dir string, maxAge ...int) {
 		cacheDuration = maxAge[0]
 	}
 
-	var handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		path := filepath.Join(dir, strings.TrimPrefix(req.URL.Path, prefix))
-
-		setCacheHeaders := func() {
-			if cacheDuration > 0 {
-				// Set cache control headers with the specified maxAge
-				w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(cacheDuration))
-			}
-		}
-
-		if ServeMinifiedAssetsIfPresent {
-			stat, err := os.Stat(path)
-			if err != nil || stat.IsDir() {
-				http.NotFound(w, req)
-				return
-			}
-
-			if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") {
-				// Check for the minified version of the file
-				minifiedPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".min" + filepath.Ext(path)
-				if filePathExists(minifiedPath) {
-					http.ServeFile(w, req, minifiedPath)
-					setCacheHeaders()
-					return
-				}
-			}
-		}
-
-		setCacheHeaders()
-
-		http.ServeFile(w, req, path)
-
-	})
-
-	r.mux.Handle(prefix, r.chain(r.globalMiddlewares, WrapHandler(handler)))
+	r.mux.Handle(prefix, r.chain(r.globalMiddlewares,
+		WrapHandler(staticHandler(prefix, dir, cacheDuration))),
+	)
 }
 
-func filePathExists(name string) bool {
-	stat, err := os.Stat(name)
-	return err == nil && !stat.IsDir()
-}
-
-// Wrapper around http.ServeFile.
+// Wrapper around http.ServeFile but applies global middleware to the handler.
 func (r *Router) File(path, file string) {
 	var hf http.HandlerFunc = func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, file)
@@ -655,7 +432,7 @@ func (r *Router) File(path, file string) {
 }
 
 func (r *Router) FileFS(fs http.FileSystem, prefix, path string) {
-	r.GET(prefix, WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	r.GET(prefix, WrapFunc(func(w http.ResponseWriter, req *http.Request) {
 		f, err := fs.Open(path)
 		if err != nil {
 			http.NotFound(w, req)
@@ -671,7 +448,7 @@ func (r *Router) FileFS(fs http.FileSystem, prefix, path string) {
 
 		w.WriteHeader(http.StatusOK)
 		http.ServeContent(w, req, path, stat.ModTime(), f)
-	})))
+	}))
 }
 
 // Serve favicon.ico from the file system fs at path.
@@ -713,32 +490,23 @@ type minifiedFS struct {
 }
 
 func (mfs *minifiedFS) Open(name string) (http.File, error) {
-	// Check if the requested file is a .js or .css file
-	if strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".css") {
-		// Check for the minified version of the file
-		minifiedName := strings.TrimSuffix(name, filepath.Ext(name)) + ".min" + filepath.Ext(name)
+	ext := filepath.Ext(name)
 
-		// Return minified file if available.
+	if slices.Contains(MinExtensions, ext) {
+		minifiedName := strings.TrimSuffix(name, filepath.Ext(name)) + ".min" + filepath.Ext(name)
 		if f, err := mfs.FileSystem.Open(minifiedName); err == nil {
 			return f, nil
 		}
 	}
 
-	// If no minified version is found, serve the original file
+	// serve the original file
 	return mfs.FileSystem.Open(name)
 }
-
-// Serve minified Javascript and CSS if present instead of original file.
-// This applies to StaticFS, Static functions.
-// e.g /static/js/main.js will serve /static/js/main.min.js if present.
-// Default is false.
-// This is important since we maintain the same script sources in our templates/html.
-var ServeMinifiedAssetsIfPresent = false
 
 // Like Static but for http.FileSystem.
 // Use this to serve embedded assets with go/embed.
 //
-//	mux.StaticFS("/static", http.FS(staticFs))
+// mux.StaticFS("/static", http.FS(staticFs))
 //
 // To enable caching, provide maxAge seconds for cache duration.
 func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
@@ -746,153 +514,28 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 		prefix = prefix + "/"
 	}
 
-	if ServeMinifiedAssetsIfPresent {
-		fs = &minifiedFS{fs}
-	}
-
 	cacheDuration := 0
 	if len(maxAge) > 0 {
 		cacheDuration = maxAge[0]
 	}
 
+	if ServeMinified {
+		fs = &minifiedFS{fs}
+	}
+
 	// Create file server for the http.FileSystem
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var handler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
 		if cacheDuration > 0 {
 			// Set cache control headers with the specified maxAge
 			w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(cacheDuration))
 		}
+
 		http.FileServer(fs).ServeHTTP(w, r)
-	})
+	}
 
 	// Apply global middleware
-	finalHandler := r.chain(r.globalMiddlewares, WrapHandler(handler))
+	finalHandler := r.chain(r.globalMiddlewares, WrapHandler(http.StripPrefix(prefix, handler)))
 	r.mux.Handle(prefix, finalHandler)
-}
-
-// =========== SPA handling ===========
-// creates a new http.FileSystem from the embed.FS
-func buildFS(frontendFS fs.FS, root string) http.FileSystem {
-	fsys, err := fs.Sub(frontendFS, root)
-	if err != nil {
-		panic(err)
-	}
-	return http.FS(fsys)
-}
-
-// SPAOptions for customizing the cache control and index file.
-type SPAOptions struct {
-	CacheControl     string           // default is empty, example: "public, max-age=31536000"
-	ResponseModifier http.HandlerFunc // allows fo modifying request/response
-	Skip             []string         // skip these routes and return 404 if they match
-	Index            string           // default is index.html
-}
-
-// Serves Single Page applications like svelte-kit, react etc.
-// frontendFS is any interface that satisfies fs.FS, like embed.FS,
-// http.Dir() wrapping a directory etc.
-// path is the mount point: likely "/".
-// buildPath is the path to build output containing your entry point html file.
-// The default entrypoint is "index.html" that is served for all unmatched routes.
-// You can change the entrypoint with options. Passed options override all defaults.
-func (r *Router) SPAHandler(frontendFS fs.FS, path string, buildPath string, options ...SPAOptions) {
-	var (
-		indexFile    = "index.html"
-		cacheControl string
-		skip         []string
-		resModifier  http.HandlerFunc = nil
-	)
-
-	if len(options) > 0 {
-		option := options[0]
-
-		cacheControl = option.CacheControl
-		skip = option.Skip
-
-		if option.Index != "" {
-			indexFile = option.Index
-		}
-		resModifier = option.ResponseModifier
-	}
-
-	indexFp, err := frontendFS.Open(filepath.Join(buildPath, indexFile))
-	if err != nil {
-		panic(err)
-	}
-
-	index, err := io.ReadAll(indexFp)
-	if err != nil {
-		panic("Unable to read contents of " + indexFile)
-	}
-
-	// Apply global middleware
-	fsHandler := http.FileServer(buildFS(frontendFS, buildPath))
-	handler := r.chain(r.globalMiddlewares, WrapHandler(fsHandler))
-
-	r.mux.HandleFunc(path, func(w http.ResponseWriter, req *http.Request) {
-		// check skip.
-		for _, s := range skip {
-			if s == req.URL.Path {
-				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-				return
-			}
-		}
-
-		baseName := filepath.Base(req.URL.Path)
-		if req.URL.Path == "/" {
-			baseName = indexFile
-		}
-
-		// open the file from the embed.FS
-		f, err := frontendFS.Open(filepath.Join(buildPath, baseName))
-		if err != nil {
-			if os.IsNotExist(err) {
-				// Could be an invalid API request
-				if filepath.Ext(req.URL.Path) != "" {
-					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-					return
-				}
-
-				// Send the html content type.
-				w.Header().Set("Content-Type", "text/html")
-
-				// set cache control headers if specified by user.
-				if cacheControl != "" {
-					w.Header().Set("Cache-Control", cacheControl)
-				}
-
-				w.WriteHeader(http.StatusAccepted)
-
-				// Allow user to modify response.
-				if resModifier != nil {
-					resModifier(w, req)
-				}
-
-				// send index.html
-				w.Write(index)
-			} else {
-				// IO Error
-				http.Error(w, "500 internal server error", http.StatusInternalServerError)
-			}
-			return
-		} else {
-			// we found the file, send it if not a directory.
-			defer f.Close()
-			stat, err := f.Stat()
-			if err != nil {
-				http.Error(w, "500 internal server error", http.StatusInternalServerError)
-				return
-			}
-
-			if stat.IsDir() {
-				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-				return
-			}
-
-			// The file system handler knows how to serve JS/CSS and other assets with the correct
-			// content type.
-			handler.ServeHTTP(w, req)
-		}
-	})
 }
 
 type RedirectOptions struct {
@@ -970,9 +613,9 @@ func (c *Context) redirectOptions() (RedirectOptions, bool) {
 
 // RouteInfo contains information about a registered route.
 type RouteInfo struct {
-	Method string // Http method.
-	Path   string // Registered pattern.
-	Name   string // Function name for the handler.
+	Method  string // Http method.
+	Path    string // Registered pattern.
+	Handler string // Function name for the handler.
 }
 
 // RegisteredRoutes returns a list of registered routes in a slice of RouteInfo.
@@ -980,60 +623,11 @@ func (r *Router) RegisteredRoutes() []RouteInfo {
 	var routes []RouteInfo
 	for _, route := range r.routes {
 		parts := strings.SplitN(route.prefix, " ", 2)
-		routes = append(routes, RouteInfo{Method: parts[0], Path: parts[1], Name: getFuncName(route.handler)})
+		routes = append(routes, RouteInfo{Method: parts[0], Path: parts[1], Handler: getFuncName(route.handler)})
 	}
 	return routes
 }
 
 func getFuncName(f interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
-}
-
-// IP returns the client's IP address.
-// It tries to get the IP from the X-Forwarded-For header first, then falls back to the X-Real-Ip header.
-// If both headers are not set, it returns the remote address from the request.
-func (c *Context) IP() (string, error) {
-	ips := c.Request.Header.Get("X-Forwarded-For")
-	splitIps := strings.Split(ips, ",")
-
-	if len(splitIps) > 0 {
-		// get last IP in list since ELB prepends other user defined IPs,
-		// meaning the last one is the actual client IP.
-		netIP := net.ParseIP(splitIps[len(splitIps)-1])
-		if netIP != nil {
-			return netIP.String(), nil
-		}
-	}
-
-	// Try to get the IP from the X-Real-Ip header.
-	ip := c.Request.Header.Get("X-Real-Ip")
-	if ip != "" {
-		return ip, nil
-	}
-
-	ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
-	if err != nil {
-		return "", err
-	}
-
-	netIP := net.ParseIP(ip)
-	if netIP != nil {
-		ip := netIP.String()
-		if ip == "::1" {
-			return "127.0.0.1", nil
-		}
-		return ip, nil
-	}
-	return "", errors.New("IP not found")
-}
-
-func (c *Context) IsValidationError(err error) bool {
-	if _, ok := err.(validator.ValidationErrors); ok {
-		return true
-	}
-	return false
-}
-
-func (c *Context) TranslateErrors(errs validator.ValidationErrors) validator.ValidationErrorsTranslations {
-	return errs.Translate(c.router.translator)
 }

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/abiiranathan/rex/rex"
+	"github.com/abiiranathan/rex"
 )
 
 // LogFormat is the format of the log output, compatible with the new slog package.
@@ -54,10 +54,10 @@ type Config struct {
 	Callback func(r *http.Request, args ...any) []any
 }
 
-// DefaultLogger is the default logger used by the Logger middleware.
+// DefaultConfig is the default logger used by the Logger middleware.
 // It writes logs to os.Stderr with the TextFormat and StdLogFlags.
 // The log level is set to Info.
-var DefaultLogger = &Config{
+var DefaultConfig = &Config{
 	Output: os.Stderr,
 	Format: TextFormat,
 	Flags:  StdLogFlags,
@@ -69,7 +69,7 @@ var DefaultLogger = &Config{
 
 func New(config *Config) rex.Middleware {
 	if config == nil {
-		config = DefaultLogger
+		config = DefaultConfig
 	}
 
 	if config.Output == nil {

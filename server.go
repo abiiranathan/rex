@@ -45,7 +45,7 @@ func NewServer(addr string, handler http.Handler, options ...ServerOption) *Serv
 }
 
 // Gracefully shuts down the server. The default timeout is 5 seconds
-// To wait for pending connections.
+// to wait for pending connections.
 func (s *Server) Shutdown(timeout ...time.Duration) {
 	var t time.Duration
 	if len(timeout) > 0 {
@@ -64,8 +64,6 @@ func (s *Server) Shutdown(timeout ...time.Duration) {
 		panic(err)
 	}
 }
-
-// Define options to configure the server
 
 func WithReadTimeout(d time.Duration) ServerOption {
 	return func(s *Server) {

@@ -718,7 +718,105 @@ func TestValidation(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("BodyParser() status = %v, want %v", w.Code, http.StatusBadRequest)
 	}
+}
+
+func TestCorrectValidation(t *testing.T) {
+	type User struct {
+		Email    string    `validate:"required,email"`
+		Username string    `validate:"required,min=6"`
+		Password string    `validate:"required,min=6"`
+		Hoby     string    `validate:"oneof=Football TV Movies"`
+		Scores   []float32 `validate:"len=3"`
+	}
+
+	r := NewRouter()
+
+	r.POST("/test", func(c *Context) error {
+		test := User{}
+		err := c.BodyParser(&test)
+		ve, ok := err.(validator.ValidationErrors)
+		if ok {
+			t.Fatalf("did not expect validation errors: %v", ve)
+		}
+
+		// The error handler will translate these errors and render them in html
+		return err
+	})
+
+	// send a multipart form
+	formData := url.Values{
+		"email":    {"example@co.ug"},
+		"username": {"johndoe"},
+		"password": {"password"},
+		"hoby":     {"Football"},
+		"scores":   {"98.5", "89", "100"},
+	}
+
+	// Encode the form data
+	formEncoded := formData.Encode()
+
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(formEncoded))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("BodyParser() status = %v, want %v", w.Code, http.StatusOK)
+	}
 
 	fmt.Println(w.Body.String())
+
+}
+
+func TestErrorHandlerFormErrors(t *testing.T) {
+	type User struct {
+		Email    string `required:"true"`
+		Username string `required:"true"`
+		Password string `required:"true"`
+	}
+
+	r := NewRouter()
+	r.POST("/test", func(c *Context) error {
+		user := User{}
+		err := c.BodyParser(&user)
+		return err
+	})
+
+	r.GET("/error", func(c *Context) error {
+		return fmt.Errorf("random error")
+	})
+
+	// send a multipart form
+	formData := url.Values{
+		"email":    {""},
+		"username": {""},
+		"password": {""},
+	}
+
+	// Encode the form data
+	formEncoded := formData.Encode()
+
+	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(formEncoded))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("BodyParser() status = %v, want %v", w.Code, http.StatusBadRequest)
+	}
+
+	fmt.Println("Body:", w.Body.String())
+
+	// random non-form error
+	req = httptest.NewRequest(http.MethodGet, "/error", strings.NewReader(formEncoded))
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("BodyParser() status = %v, want %v", w.Code, http.StatusBadRequest)
+	}
 
 }
