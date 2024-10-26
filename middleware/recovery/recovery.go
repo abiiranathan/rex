@@ -27,16 +27,14 @@ func New(stackTrace bool, errorHandler ...func(err error)) rex.Middleware {
 					if len(errorHandler) > 0 {
 						errorHandler[0](err)
 					} else {
-						log.Println(err)
 						if stackTrace {
 							log.Println(string(debug.Stack()))
+						} else {
+							log.Println(err)
 						}
 
-						c.Response.WriteHeader(http.StatusInternalServerError)
-						_, err = c.Write([]byte(err.Error()))
-						if err != nil {
-							log.Printf("could not write response: %v\n", err)
-						}
+						c.WriteHeader(http.StatusInternalServerError)
+						c.Write([]byte(err.Error()))
 					}
 				}
 			}()

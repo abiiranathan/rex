@@ -19,12 +19,14 @@ type CORSOptions struct {
 	Allowwebsockets  bool     // Allow websockets
 }
 
-// New middleware.
+// New creates a Cors middleware with default options.
+// If opts argument is provided, it is used instead of defaults.
+// All CORSOptions must be provided since there is no merging with defaults.
 // If the origin is not allowed, a 403 status code is sent.
 func New(opts ...CORSOptions) rex.Middleware {
 	var options = CORSOptions{
 		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
+		AllowedMethods:   []string{http.MethodGet, http.MethodOptions, http.MethodPost, http.MethodPut, http.MethodDelete},
 		AllowedHeaders:   []string{"*"},
 		AllowCredentials: false,
 		MaxAge:           5,

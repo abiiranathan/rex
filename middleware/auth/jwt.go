@@ -14,6 +14,7 @@ import (
 type claimsType string
 
 const jwtClaimsKey claimsType = "claims"
+const jwtPayload string = "payload"
 
 // JWT creates a JWT middleware with the given secret and options.
 func JWT(secret string) rex.Middleware {
@@ -68,17 +69,18 @@ func VerifyJWToken(secret, tokenString string) (jwt.MapClaims, error) {
 
 	// Validate the token
 	if !token.Valid {
-		return nil, fmt.Errorf("invalid token")
+		return nil, fmt.Errorf("invalid or expired token")
 	}
 
 	return token.Claims.(jwt.MapClaims), nil
 }
 
-// GetClaims returns the claims from the request context or nil if not found.
-func GetClaims(req *http.Request) jwt.MapClaims {
+// Returns the payload from the request or nil if non-exists.
+// Should be called inside the handler when JWT verification is complete.
+func GetPayload(req *http.Request) any {
 	claims, ok := req.Context().Value(jwtClaimsKey).(jwt.MapClaims)
 	if !ok {
 		return nil
 	}
-	return claims
+	return claims[jwtPayload]
 }
