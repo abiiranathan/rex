@@ -7,11 +7,18 @@ import (
 	"text/template"
 
 	"github.com/abiiranathan/rex"
-	"github.com/gorilla/sessions"
+	"github.com/abiiranathan/rex/middleware/auth"
+	"github.com/abiiranathan/rex/middleware/logger"
+	"github.com/gorilla/securecookie"
 )
 
 //go:embed templates
 var viewsFS embed.FS
+
+type User struct {
+	Username string
+	Password string
+}
 
 // base.html is automatically added to every template.
 // {{ .Content }} is replaced with page contents.
@@ -56,81 +63,83 @@ func ApiHandler(c *rex.Context) error {
 	return c.JSON(todos)
 }
 
-// For more persistent sessions, use a database store.
-// e.g https://github.com/antonlindstrom/pgstore
-var store = sessions.NewCookieStore([]byte("secret"))
-
 // Create a protected handler
 func protectedHandler(c *rex.Context) error {
-	session, _ := store.Get(c.Request, "session-name")
-	if session.Values["authenticated"] != true {
-		return c.WriteHeader(http.StatusUnauthorized)
-	}
-
-	name := session.Values["user"]
-	_, n := c.Write([]byte("Hello " + name.(string)))
-	return n
+	state, _ := auth.GetAuthState(c.Request, c.Response)
+	user := state.(User)
+	return c.String("Hello %s", user.Username)
 }
 
-func SessionMiddleware(next rex.HandlerFunc) rex.HandlerFunc {
-	return func(c *rex.Context) error {
-		session, _ := store.Get(c.Request, "session-name")
-		if session.Values["authenticated"] != true {
-			return c.Redirect("/login", http.StatusSeeOther)
-		}
-		return next(c)
-	}
+func authErrorCallback(c *rex.Context) error {
+	return c.Redirect("/login")
 }
 
-func loginGetHandler(c *rex.Context) error {
+func renderLoginPage(c *rex.Context) error {
+	// if already logged in, redirect home
+	if _, authenticated := auth.GetAuthState(c.Request, c.Response); authenticated {
+		return c.Redirect("/")
+	}
+
+	c.SetHeader("cache-control", "no-cache")
 	return c.Render("templates/login.html", rex.Map{})
 }
 
-func main() {
-	templ, err := rex.ParseTemplatesFS(viewsFS, "templates", template.FuncMap{}, ".html")
-	if err != nil {
-		panic(err)
-	}
+func performLogin(c *rex.Context) error {
+	var username, password string
+	username = c.FormValue("username")
+	password = c.FormValue("password")
 
-	r := rex.NewRouter(
+	// auth verification here
+
+	user := User{Username: username, Password: password}
+	err := auth.SetAuthState(c.Request, c.Response, user)
+	if err != nil {
+		return err
+	}
+	return c.Redirect("/protected", http.StatusSeeOther)
+}
+
+func logout(c *rex.Context) error {
+	auth.ClearAuthState(c.Request, c.Response)
+	return c.Redirect("/login")
+}
+
+func APiRoutes(c *rex.Context) error {
+	return c.JSON(c.Router().RegisteredRoutes())
+}
+
+func main() {
+	templ := rex.Must(rex.ParseTemplatesFS(viewsFS, "templates", template.FuncMap{}, ".html"))
+
+	routerOPtions := []rex.RouterOption{
 		rex.WithTemplates(templ),
-		rex.PassContextToViews(true),
 		rex.BaseLayout("templates/base.html"),
 		rex.ContentBlock("Content"),
-	)
+		rex.PassContextToViews(true),
+	}
+
+	r := rex.NewRouter(routerOPtions...)
+	r.Use(logger.New(nil))
+
+	r.GET("/login", renderLoginPage)
+	r.POST("/login", performLogin)
+
+	// Routes below will require cookie auth.
+	// if login routes are defined below, we define a skipFunc and ignore them.
+	var secretKey = securecookie.GenerateRandomKey(64)
+	auth.Register(User{})
+	r.Use(auth.Cookie(authErrorCallback, nil, secretKey))
 
 	r.GET("/", HomeHandler)
 	r.GET("/about", AboutHandler)
 	r.GET("/api", ApiHandler)
+	r.GET("/api/routes", APiRoutes)
 	r.GET("/doctor", NestedTemplate)
+	r.GET("/protected", protectedHandler)
+	r.POST("/logout", logout)
 
-	// Create a basic auth middleware
-	r.GET("/login", loginGetHandler)
-
-	r.POST("/login", func(c *rex.Context) error {
-		var username, password string
-		username = c.Request.FormValue("username")
-		password = c.Request.FormValue("password")
-
-		if username == "admin" && password == "admin" {
-			session, _ := store.Get(c.Request, "session-name")
-			session.Values["authenticated"] = true
-			session.Values["user"] = username
-			session.Save(c.Request, c.Response)
-			return c.Redirect("/protected", http.StatusSeeOther)
-		}
-
-		return c.WriteHeader(http.StatusUnauthorized)
-	})
-
-	r.GET("/protected", protectedHandler, SessionMiddleware)
-	r.GET("/users/{username}", func(c *rex.Context) error {
-		username := c.Param("username")
-		return c.String("Hello %s", username)
-	})
-
+	log.Println("Server started on 0.0.0.0:8080")
 	srv := rex.NewServer(":8080", r)
 	defer srv.Shutdown()
-
 	log.Fatalln(srv.ListenAndServe())
 }

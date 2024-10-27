@@ -48,15 +48,15 @@ func TestCookieMiddleware(t *testing.T) {
 	})
 
 	router.GET("/", func(c *rex.Context) error {
-		u, authenticated := auth.GetAuthState(c.Request)
+		state, authenticated := auth.GetAuthState(c.Request, c.Response)
 		if !authenticated {
 			t.Fatal("user is not authenticated")
 		}
-		return c.String("Welcome home: %s", u.(user).username)
+		return c.String("Welcome home: %s", state.(user).username)
 	})
 
 	router.POST("/logout", func(c *rex.Context) error {
-		auth.ClearAuthState(c.Request)
+		auth.ClearAuthState(c.Request, c.Response)
 		return c.Redirect("/")
 	})
 

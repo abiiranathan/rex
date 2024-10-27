@@ -545,6 +545,7 @@ type RedirectOptions struct {
 }
 
 var defaultRedirectOptions = RedirectOptions{
+	Status:      http.StatusSeeOther,
 	Params:      make(map[string]string),
 	QueryParams: make(map[string]string),
 }
@@ -613,9 +614,9 @@ func (c *Context) redirectOptions() (RedirectOptions, bool) {
 
 // RouteInfo contains information about a registered route.
 type RouteInfo struct {
-	Method  string // Http method.
-	Path    string // Registered pattern.
-	Handler string // Function name for the handler.
+	Method  string `json:"method,omitempty"` // Http method.
+	Path    string `json:"path,omitempty"`   // Registered pattern.
+	Handler string `json:"-"`                // Function name for the handler.
 }
 
 // RegisteredRoutes returns a list of registered routes in a slice of RouteInfo.

@@ -282,3 +282,10 @@ func ParseTemplatesFS(root fs.FS, rootDir string, funcMap template.FuncMap, suff
 	})
 	return tmpl, err
 }
+
+func Must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}

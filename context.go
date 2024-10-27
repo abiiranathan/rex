@@ -270,3 +270,8 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 	_, err = io.Copy(out, src)
 	return err
 }
+
+// Returns the *rex.Router instance.
+func (c *Context) Router() *Router {
+	return c.router
+}
