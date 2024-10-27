@@ -35,6 +35,10 @@ func Cookie(errorCallback func(c *rex.Context) error, skip func(req *http.Reques
 	}
 
 	store = sessions.NewCookieStore(keyPairs...)
+	store.Options.HttpOnly = true
+	store.Options.Secure = true
+	store.Options.SameSite = http.SameSiteStrictMode
+	store.Options.MaxAge = 24 * 60 * 60 // 24 hours
 
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -68,10 +72,6 @@ func Register(value any) {
 // This cab be called following user login.
 func SetAuthState(c *rex.Context, state any) error {
 	session, _ := store.Get(c.Request, sessionName)
-	if !session.IsNew {
-		ClearAuthState(c)
-	}
-
 	session.Values[authKey] = true
 	session.Values[stateKey] = state
 	return session.Save(c.Request, c.Response)
@@ -85,7 +85,7 @@ func GetAuthState(c *rex.Context) (state any, authenticated bool) {
 	}
 
 	state = session.Values[stateKey]
-	return state, session.Values[authKey] == true
+	return state, state != nil && session.Values[authKey] == true
 }
 
 // ClearAuthState deletes authentication state.
