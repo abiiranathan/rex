@@ -65,7 +65,7 @@ func ApiHandler(c *rex.Context) error {
 
 // Create a protected handler
 func protectedHandler(c *rex.Context) error {
-	state, _ := auth.GetAuthState(c.Request, c.Response)
+	state, _ := auth.GetAuthState(c)
 	user := state.(User)
 	return c.String("Hello %s", user.Username)
 }
@@ -76,7 +76,7 @@ func authErrorCallback(c *rex.Context) error {
 
 func renderLoginPage(c *rex.Context) error {
 	// if already logged in, redirect home
-	if _, authenticated := auth.GetAuthState(c.Request, c.Response); authenticated {
+	if _, authenticated := auth.GetAuthState(c); authenticated {
 		return c.Redirect("/")
 	}
 
@@ -92,7 +92,7 @@ func performLogin(c *rex.Context) error {
 	// auth verification here
 
 	user := User{Username: username, Password: password}
-	err := auth.SetAuthState(c.Request, c.Response, user)
+	err := auth.SetAuthState(c, user)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func performLogin(c *rex.Context) error {
 }
 
 func logout(c *rex.Context) error {
-	auth.ClearAuthState(c.Request, c.Response)
+	auth.ClearAuthState(c)
 	return c.Redirect("/login")
 }
 

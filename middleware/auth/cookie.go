@@ -66,20 +66,20 @@ func Register(value any) {
 // SetAuthState stores user state for this request.
 // It could the user object, userId or any thing serializable into a cookie.
 // This cab be called following user login.
-func SetAuthState(req *http.Request, w http.ResponseWriter, state any) error {
-	session, _ := store.Get(req, sessionName)
+func SetAuthState(c *rex.Context, state any) error {
+	session, _ := store.Get(c.Request, sessionName)
 	if !session.IsNew {
-		ClearAuthState(req, w)
+		ClearAuthState(c)
 	}
 
 	session.Values[authKey] = true
 	session.Values[stateKey] = state
-	return session.Save(req, w)
+	return session.Save(c.Request, c.Response)
 }
 
 // Returns the auth state for this request.
-func GetAuthState(req *http.Request, w http.ResponseWriter) (state any, authenticated bool) {
-	session, _ := store.Get(req, sessionName)
+func GetAuthState(c *rex.Context) (state any, authenticated bool) {
+	session, _ := store.Get(c.Request, sessionName)
 	if session.IsNew {
 		return nil, false
 	}
@@ -89,9 +89,9 @@ func GetAuthState(req *http.Request, w http.ResponseWriter) (state any, authenti
 }
 
 // ClearAuthState deletes authentication state.
-func ClearAuthState(req *http.Request, w http.ResponseWriter) error {
+func ClearAuthState(c *rex.Context) error {
 	// remove cookie from store
-	session, _ := store.Get(req, sessionName)
+	session, _ := store.Get(c.Request, sessionName)
 	if session.IsNew {
 		return nil
 	}
@@ -100,7 +100,7 @@ func ClearAuthState(req *http.Request, w http.ResponseWriter) error {
 		delete(session.Values, k)
 	}
 
-	cookie, err := req.Cookie(sessionName)
+	cookie, err := c.Request.Cookie(sessionName)
 	if err != nil {
 		return nil
 	}
@@ -109,7 +109,7 @@ func ClearAuthState(req *http.Request, w http.ResponseWriter) error {
 	cookie.MaxAge = -1
 
 	// Set the cookie to cause it to expire.
-	http.SetCookie(w, cookie)
+	http.SetCookie(c.Response, cookie)
 
-	return session.Save(req, w)
+	return session.Save(c.Request, c.Response)
 }
