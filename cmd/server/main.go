@@ -5,11 +5,13 @@ import (
 	"log"
 	"net/http"
 	"text/template"
+	"time"
 
 	"github.com/abiiranathan/rex"
 	"github.com/abiiranathan/rex/middleware/auth"
 	"github.com/abiiranathan/rex/middleware/logger"
 	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 )
 
 //go:embed templates
@@ -128,7 +130,16 @@ func main() {
 	// if login routes are defined below, we define a skipFunc and ignore them.
 	var secretKey = securecookie.GenerateRandomKey(64)
 	auth.Register(User{})
-	r.Use(auth.Cookie(authErrorCallback, nil, secretKey))
+	r.Use(auth.Cookie(auth.CookieConfig{
+		KeyPairs: [][]byte{secretKey},
+		Options: &sessions.Options{
+			MaxAge:   int((24 * time.Hour).Seconds()),
+			Secure:   false,
+			SameSite: http.SameSiteStrictMode,
+		},
+		ErrorHandler: authErrorCallback,
+		SkipAuth:     nil,
+	}))
 
 	r.GET("/", HomeHandler)
 	r.GET("/about", AboutHandler)
