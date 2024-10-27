@@ -6,10 +6,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abiiranathan/rex"
 	"github.com/abiiranathan/rex/middleware/auth"
 	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 )
 
 type User struct {
@@ -27,12 +29,21 @@ func skipAuth(req *http.Request) bool {
 
 func TestCookieMiddleware(t *testing.T) {
 	secretKey := securecookie.GenerateRandomKey(32)
-	blockKey := securecookie.GenerateRandomKey(32)
+	encryptionKey := securecookie.GenerateRandomKey(32)
 
 	auth.Register(User{})
 
 	router := rex.NewRouter()
-	router.Use(auth.Cookie(errorCallback, skipAuth, secretKey, blockKey))
+	router.Use(auth.Cookie(auth.CookieConfig{
+		KeyPairs: [][]byte{secretKey, encryptionKey},
+		Options: &sessions.Options{
+			MaxAge:   int((24 * time.Hour).Seconds()),
+			Secure:   false,
+			SameSite: http.SameSiteStrictMode,
+		},
+		ErrorHandler: errorCallback,
+		SkipAuth:     skipAuth,
+	}))
 
 	router.POST("/login", func(c *rex.Context) error {
 		contentType := c.ContentType()
@@ -68,7 +79,7 @@ func TestCookieMiddleware(t *testing.T) {
 
 	router.POST("/logout", func(c *rex.Context) error {
 		auth.ClearAuthState(c)
-		return c.Redirect("/")
+		return c.String("Logout successful")
 	})
 
 	form := url.Values{
@@ -107,6 +118,27 @@ func TestCookieMiddleware(t *testing.T) {
 	expected := "Welcome home: abiiranathan"
 	if expected != w.Body.String() {
 		t.Fatalf("expected %q, got %s\n", expected, w.Body.String())
+	}
+
+	// Perform logout
+	req = httptest.NewRequest(http.MethodPost, "/logout", nil)
+	req.Header.Add("Cookie", cookies[0])
+	w = httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Errorf("expected status code %d, got %d", http.StatusOK, w.Result().StatusCode)
+	}
+
+	// Perform unauthenticated request
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	w = httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status code %d, got %d", http.StatusUnauthorized, w.Result().StatusCode)
 	}
 
 }
