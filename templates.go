@@ -283,6 +283,7 @@ func ParseTemplatesFS(root fs.FS, rootDir string, funcMap template.FuncMap, suff
 	return tmpl, err
 }
 
+// Must unwraps the value and panics if the error is not nil.
 func Must[T any](value T, err error) T {
 	if err != nil {
 		panic(err)

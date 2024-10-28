@@ -19,7 +19,7 @@
   - **Panic Recovery**: Gracefully handles panics.
   - **ETag Support**: For caching optimization.
   - **CORS Handling**: Cross-Origin Resource Sharing middleware.
-  - **Basic Auth & JWT Middleware**: Secure your routes with basic or token-based authentication.
+  - **Seesion based cookie auth, Basic Auth & JWT Middleware**: Secure your routes with seesion, basic or token-based authentication.
 - **Custom Middleware**:  
   Implement your own middleware by wrapping `rex.Handler`.
 - **Static File Serving**:  

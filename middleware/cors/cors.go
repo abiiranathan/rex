@@ -81,6 +81,7 @@ func New(opts ...CORSOptions) rex.Middleware {
 				c.Response.Header().Set("Access-Control-Allow-Websocket", "true")
 			}
 
+			// Handle preflight requests and return early
 			if c.Request.Method == http.MethodOptions {
 				c.Response.WriteHeader(http.StatusNoContent)
 				return nil

@@ -69,6 +69,14 @@ func (c *Context) ContentType() string {
 	return strings.Split(c.Request.Header.Get("Content-Type"), ";")[0]
 }
 
+// Accepts returns the best match from the Accept header.
+func (c *Context) AcceptHeader() string {
+	accept := c.Request.Header.Get("Accept")
+
+	// accept header may contain multiple values and encoding types
+	return strings.Split(accept, ",")[0]
+}
+
 // Send HTML response.
 func (c *Context) HTML(html string) error {
 	c.Response.Header().Set("Content-Type", "text/html")
@@ -84,6 +92,32 @@ func (c *Context) WriteHeader(status int) error {
 // Write sends a raw response
 func (c *Context) Write(data []byte) (int, error) {
 	return c.Response.Write(data)
+}
+
+// Send sends a raw response and returns an error.
+// This conveniently returns only the error from the response writer.
+func (c *Context) Send(data []byte) error {
+	_, err := c.Response.Write(data)
+	return err
+}
+
+// Error sends an error response as plain text.
+// You can optionally pass a content type.
+// Status code is expected to be between 400 and 599.
+func (c *Context) Error(err error, status int, contentType ...string) error {
+	if status < 400 || status > 599 {
+		return errors.New("status code must be between 400 and 599")
+	}
+
+	if len(contentType) > 0 && contentType[0] != "" {
+		c.Response.Header().Set("Content-Type", contentType[0])
+	} else {
+		c.Response.Header().Set("Content-Type", "text/plain")
+	}
+
+	c.Response.WriteHeader(status)
+	_, e := c.Response.Write([]byte(err.Error()))
+	return e
 }
 
 // Param gets a path parameter value by name from the request.

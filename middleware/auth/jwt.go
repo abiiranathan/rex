@@ -13,8 +13,12 @@ import (
 
 type claimsType string
 
-const jwtClaimsKey claimsType = "claims"
-const jwtPayload string = "payload"
+const (
+	jwtClaimsKey claimsType = "claims"
+	jwtPayload   string     = "payload"
+	expKey       string     = "exp"
+	tokenPrefix  string     = "Bearer "
+)
 
 // JWT creates a JWT middleware with the given secret and options.
 func JWT(secret string) rex.Middleware {
@@ -24,7 +28,7 @@ func JWT(secret string) rex.Middleware {
 			tokenString := ctx.Request.Header.Get("Authorization")
 
 			// Remove the "Bearer " prefix
-			tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+			tokenString = strings.TrimPrefix(tokenString, tokenPrefix)
 
 			// remove whitespace
 			tokenString = strings.TrimSpace(tokenString)
@@ -46,15 +50,19 @@ func JWT(secret string) rex.Middleware {
 }
 
 // CreateToken creates a new JWT token with the given payload and expiry duration.
-// JWT is signed with the given secret using the HMAC256 alegorithm.
+// JWT is signed with the given secret key using the HMAC256 alegorithm.
 func CreateJWTToken(secret string, payload any, exp time.Duration) (string, error) {
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
-	claims["payload"] = payload
-	claims["exp"] = time.Now().Add(exp).Unix()
+	claims[jwtPayload] = payload
+	claims[expKey] = time.Now().Add(exp).Unix()
 	return token.SignedString([]byte(secret))
 }
 
+// VerifyJWToken verifies the given JWT token with the secret key.
+// Returns the claims if the token is valid, otherwise an error.
+// The token is verified using the HMAC256 algorithm.
+// The default claims are stored in the "payload" key and the expiry time in the "exp" key.
 func VerifyJWToken(secret, tokenString string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Validate the signing method

@@ -90,7 +90,7 @@ var DefaultTimezone = time.UTC
 // Otherwise rex.DefaultTimezone is used and defaults to UTC.
 //
 // Supported content types: application/json, application/x-www-form-urlencoded, multipart/form-data, application/xml
-// For more robust form decoding we recommend using
+// If you need to parse a different content type, you can implement a custom parser or use a third-party package like
 // https://github.com/gorilla/schema package.
 // Any form value can implement the FormScanner interface to implement custom form scanning.
 // Struct tags are used to specify the form field name.
@@ -211,11 +211,26 @@ func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
 	}
 }
 
+// SnakeCase converts a string to snake_case.
+// For more complex cases, use a third-party package like github.com/iancoleman/strcase.
 func SnakeCase(s string) string {
 	var res strings.Builder
 	for i, r := range s {
 		if i > 0 && 'A' <= r && r <= 'Z' {
 			res.WriteRune('_')
+		}
+		res.WriteRune(r)
+	}
+	return strings.ToLower(res.String())
+}
+
+// KebabCase converts a string to kebab-case.
+// For more complex cases, use a third-party package like github.com/iancoleman/strcase.
+func KebabCase(s string) string {
+	var res strings.Builder
+	for i, r := range s {
+		if i > 0 && 'A' <= r && r <= 'Z' {
+			res.WriteRune('-')
 		}
 		res.WriteRune(r)
 	}

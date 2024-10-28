@@ -248,6 +248,47 @@ func TestSnakecase(t *testing.T) {
 
 }
 
+func TestKebabCase(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Empty", "", ""},
+		{"Lowercase", "example", "example"},
+		{"Uppercase", "Example", "example"},
+		{"CamelCase", "exampleString", "example-string"},
+		{"CamelCase", "ExampleString", "example-string"},
+		{"CamelCase", "exampleString123", "example-string123"},
+		{"CamelCase", "ExampleString123", "example-string123"},
+		{"CamelCase", "exampleStringWithNumbers123", "example-string-with-numbers123"},
+		{"CamelCase", "ExampleStringWithNumbers123", "example-string-with-numbers123"},
+		{"CamelCase", "exampleStringWithMultipleParts", "example-string-with-multiple-parts"},
+		{"CamelCase", "ExampleStringWithMultipleParts", "example-string-with-multiple-parts"},
+		{"CamelCase", "exampleStringWithNumbers123AndMore", "example-string-with-numbers123-and-more"},
+		{"CamelCase", "ExampleStringWithNumbers123AndMore", "example-string-with-numbers123-and-more"},
+		{"CamelCase", "exampleStringWithNumbers123AndEvenMoreParts", "example-string-with-numbers123-and-even-more-parts"},
+		{"CamelCase", "ExampleStringWithNumbers123AndEvenMoreParts", "example-string-with-numbers123-and-even-more-parts"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := KebabCase(tt.input); got != tt.expected {
+				t.Errorf("kebabcase() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := KebabCase(tt.input); got != tt.expected {
+				t.Errorf("kebabcase() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+
+}
+
 // test multipart form with []int and []string
 func TestSetFieldMultipartForm(t *testing.T) {
 	type TestStruct struct {

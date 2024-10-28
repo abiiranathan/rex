@@ -51,7 +51,7 @@ func main() {
 		SameSite: http.SameSiteLaxMode,
 	}
 
-	mux.Use(csrf.New(store))
+	mux.Use(csrf.New(store, false))
 	mux.StaticFS("/static", http.FS(static))
 	// mux.Static("/static/", "static")
 

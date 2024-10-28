@@ -1,82 +1,154 @@
 package csrf_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/abiiranathan/rex"
 	"github.com/abiiranathan/rex/middleware/csrf"
 	"github.com/gorilla/sessions"
+	"github.com/stretchr/testify/require"
 )
 
-// test csrf.go
+// Mock session store for testing.
+var store = sessions.NewCookieStore([]byte("test-secret"))
 
-type user struct {
-	Name string
-	Age  int
-}
+// Middleware test helper to simulate an HTTP request.
+func testMiddleware(method, url string, body string, cookie *http.Cookie, handler http.Handler) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-func TestCSRF(t *testing.T) {
-	router := rex.NewRouter()
-
-	store := sessions.NewCookieStore([]byte("super secret token"))
-	router.Use(csrf.New(store))
-
-	router.GET("/csrf", func(c *rex.Context) error {
-		_, err := c.Write([]byte("Hello CSRF"))
-		return err
-	})
-
-	router.POST("/csrf", func(c *rex.Context) error {
-		var u user
-		err := c.BodyParser(&u)
-		if err != nil {
-			return c.WriteHeader(http.StatusBadRequest)
-		}
-		return c.JSON(u)
-	})
-
-	// create request
-	req := httptest.NewRequest("GET", "/csrf", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// check if the response is 200, we/GET /csrf should not be blocked
-	if w.Code != 200 {
-		t.Errorf("GET /csrf failed: %d", w.Code)
+	if cookie != nil {
+		req.AddCookie(cookie)
 	}
 
-	token := w.Header().Get("X-CSRF-Token")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	return resp
+}
 
-	// create request
-	u := user{Name: "John Doe", Age: 25}
+// Test that the CSRF token is generated and set in the cookie.
+func TestCSRFTokenGeneration(t *testing.T) {
+	handler := csrf.New(store, false)(rex.HandlerFunc(func(ctx *rex.Context) error {
+		_, err := ctx.Response.Write([]byte("OK"))
+		require.NoError(t, err)
+		return nil
+	}))
 
-	b, _ := json.Marshal(u)
-	body := bytes.NewReader(b)
+	resp := testMiddleware(http.MethodGet, "/", "", nil, handler)
 
-	req = httptest.NewRequest("POST", "/csrf", body)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-CSRF-Token", token)
+	// Check that the cookie is set.
+	cookie := resp.Result().Cookies()
+	require.NotEmpty(t, cookie, "Expected a CSRF cookie to be set")
 
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	// Verify the cookie properties.
+	csrfCookie := cookie[0]
+	require.Equal(t, "csrf_token", csrfCookie.Name)
+	require.True(t, csrfCookie.HttpOnly, "Cookie should be HTTP-only")
+	require.True(t, csrfCookie.Secure, "Cookie should be secure (use HTTPS)")
+}
 
-	// TODO: Fix this test
-	// // check if the response is 200, we/POST /csrf should not be blocked
-	// if w.Code != 200 {
-	// 	t.Errorf("POST /csrf failed: %d", w.Code)
-	// }
+// Helper function to create a POST request with form values and cookie.
+func testPOSTRequestWithForm(urlPath string, formData url.Values, cookie *http.Cookie, handler http.Handler) *httptest.ResponseRecorder {
+	// Encode the form data.
+	body := strings.NewReader(formData.Encode())
 
-	// // create request
-	// req = httptest.NewRequest("POST", "/csrf", nil)
-	// w = httptest.NewRecorder()
-	// router.ServeHTTP(w, req)
+	// Create a new POST request.
+	req := httptest.NewRequest(http.MethodPost, urlPath, body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	// // check if the response is 403, we/POST /csrf should be blocked
-	// if w.Code != 403 {
-	// 	t.Errorf("POST /csrf failed: %d", w.Code)
-	// }
+	// Add the CSRF cookie to the request if provided.
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+
+	// Create a response recorder to capture the response.
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	return resp
+}
+
+// Test that the CSRF token is validated correctly.
+func TestCSRFTokenValidationSuccess(t *testing.T) {
+	// Create a valid CSRF token and set it in the cookie.
+	token, err := csrf.CreateToken()
+	require.NoError(t, err)
+
+	cookie := &http.Cookie{Name: "csrf_token", Value: token}
+
+	// Define the handler with CSRF middleware.
+	handler := csrf.New(store, false)(rex.HandlerFunc(func(ctx *rex.Context) error {
+		_, err := ctx.Response.Write([]byte("OK"))
+		require.NoError(t, err)
+		return nil
+	}))
+
+	// Create form data with the CSRF token.
+	formData := url.Values{}
+	formData.Set("csrf_token", token)
+
+	// Simulate a POST request with the form data.
+	resp := testPOSTRequestWithForm("/submit", formData, cookie, handler)
+
+	// Check if the response status is 200 OK.
+	require.Equal(t, http.StatusOK, resp.Code, "Expected 200 OK response")
+}
+
+// Test that CSRF token validation fails when the token is missing.
+func TestCSRFTokenValidationFailure_MissingToken(t *testing.T) {
+	handler := csrf.New(store, false)(rex.HandlerFunc(func(ctx *rex.Context) error {
+		_, err := ctx.Response.Write([]byte("OK"))
+		require.NoError(t, err)
+		return nil
+	}))
+
+	// Simulate a POST request without a CSRF token.
+	resp := testMiddleware(http.MethodPost, "/submit", "", nil, handler)
+
+	require.Equal(t, http.StatusForbidden, resp.Code, "Expected 403 Forbidden response")
+}
+
+// Test that CSRF validation fails if the token in the request doesn't match the cookie.
+func TestCSRFTokenValidationFailure_InvalidToken(t *testing.T) {
+	// Create a valid token and a mismatched token for the request.
+	validToken, err := csrf.CreateToken()
+	require.NoError(t, err)
+
+	mismatchedToken, err := csrf.CreateToken()
+	require.NoError(t, err)
+
+	cookie := &http.Cookie{Name: "csrf_token", Value: validToken}
+
+	handler := csrf.New(store, false)(rex.HandlerFunc(func(ctx *rex.Context) error {
+		_, err := ctx.Response.Write([]byte("OK"))
+		require.NoError(t, err)
+		return nil
+	}))
+
+	// Simulate a POST request with the mismatched token.
+	body := "csrf_token=" + mismatchedToken
+	resp := testMiddleware(http.MethodPost, "/submit", body, cookie, handler)
+
+	require.Equal(t, http.StatusForbidden, resp.Code, "Expected 403 Forbidden response")
+}
+
+// Test that safe HTTP methods (GET, HEAD, OPTIONS) bypass CSRF validation.
+func TestSafeMethodsBypassCSRFValidation(t *testing.T) {
+	handler := csrf.New(store, false)(rex.HandlerFunc(func(ctx *rex.Context) error {
+		_, err := ctx.Response.Write([]byte("OK"))
+		require.NoError(t, err)
+		return nil
+	}))
+
+	// Test each safe method.
+	safeMethods := []string{http.MethodGet, http.MethodHead, http.MethodOptions}
+	for _, method := range safeMethods {
+		t.Run(method, func(t *testing.T) {
+			resp := testMiddleware(method, "/", "", nil, handler)
+			require.Equal(t, http.StatusOK, resp.Code, "Expected 200 OK response")
+		})
+	}
 }

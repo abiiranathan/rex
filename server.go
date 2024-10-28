@@ -3,6 +3,7 @@ package rex
 import (
 	"context"
 	"crypto/tls"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -60,8 +61,8 @@ func (s *Server) Shutdown(timeout ...time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), t)
 	defer cancel()
 
-	if err := s.Server.Shutdown(ctx); err != nil {
-		panic(err)
+	if err := s.Server.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Could not gracefully shutdown the server: %v\n", err)
 	}
 }
 
@@ -92,9 +93,9 @@ func WithTLSConfig(config *tls.Config) ServerOption {
 }
 
 // New option to fine-tune HTTP/2 settings
-func WithHTTP2Options(options http2.Server) ServerOption {
+func WithHTTP2Options(http2ServerOptions http2.Server) ServerOption {
 	return func(s *Server) {
-		http2.ConfigureServer(s.Server, &options)
+		http2.ConfigureServer(s.Server, &http2ServerOptions)
 	}
 }
 

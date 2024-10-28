@@ -161,6 +161,29 @@ func WithLogger(logger *slog.Logger) RouterOption {
 	}
 }
 
+// defaultErrorHandler is the default error handler for the router.
+// It handles errors centrally and logs and writes the error to the response.
+// The logger can be replaced with a custom logger using WithLogger option.
+// It also handles validation errors and form errors.
+// The default error handler can be replaced with a custom error handler using SetErrorHandler.
+func defaultErrorHandler(ctx *Context, err error) {
+	// Log the error
+	ctx.router.logger.Debug("ERROR", "error", err, "status", ctx.Response.Status(), "path", ctx.Request.URL.Path)
+
+	if ve, ok := err.(validator.ValidationErrors); ok {
+		HandleValidationErrors(ctx, ve)
+		return
+	}
+
+	if fe, ok := err.(FormError); ok {
+		HandleFormErrors(ctx, fe)
+		return
+	}
+
+	ctx.WriteHeader(http.StatusInternalServerError)
+	ctx.Write([]byte(err.Error()))
+}
+
 // NewRouter creates a new router with the given options.
 // The router wraps the http.DefaultServeMux and adds routing and middleware
 // capabilities.
@@ -185,24 +208,7 @@ func NewRouter(options ...RouterOption) *Router {
 		})),
 
 		// Global error handler function.
-		errorHandler: func(ctx *Context, err error) {
-			if ve, ok := err.(validator.ValidationErrors); ok {
-				HandleValidationErrors(ctx, ve)
-				return
-			}
-
-			if fe, ok := err.(FormError); ok {
-				HandleFormErrors(ctx, fe)
-				return
-			}
-
-			// Default to plain text
-			ctx.WriteHeader(http.StatusInternalServerError)
-			ctx.Write([]byte(err.Error()))
-
-			// Log the error
-			ctx.router.logger.Debug("ERROR", "error", err, "status", ctx.Response.Status(), "path", ctx.Request.URL.Path)
-		},
+		errorHandler: defaultErrorHandler,
 	}
 
 	// Create translator
@@ -275,15 +281,23 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, middlewares
 
 	// Convert HandlerFunc to http.HandlerFunc for ServeMux
 	r.mux.Handle(routePattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var skipBody bool
 		// Only handle requests with matching method
 		if req.Method != method {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
+			// Allow HEAD requests for GET routes
+			// OPTIONS/TRACE and other methods are not allowed and must be defined explicitly.
+			allowed := method == http.MethodGet && req.Method == http.MethodHead
+			if !allowed {
+				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			skipBody = true
 		}
 
 		rw := &ResponseWriter{
-			writer: w,
-			status: http.StatusOK,
+			writer:   w,
+			status:   http.StatusOK,
+			skipBody: skipBody,
 		}
 
 		ctx := &Context{

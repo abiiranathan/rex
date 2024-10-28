@@ -10,10 +10,11 @@ import (
 
 // ResponseWriter wraps http.ResponseWriter with additional functionality
 type ResponseWriter struct {
-	writer     http.ResponseWriter
-	status     int
-	size       int
-	statusSent bool
+	writer     http.ResponseWriter // The original http.ResponseWriter
+	status     int                 // The status code of the response
+	size       int                 // The size of the response sent so far
+	statusSent bool                // If the status has been sent
+	skipBody   bool                // If its a HEAD request, we should skip the body
 }
 
 // ResponseWriter interface
@@ -34,6 +35,12 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 	if !w.statusSent {
 		w.WriteHeader(http.StatusOK)
 	}
+
+	// If it's a HEAD request, we should skip the body
+	if w.skipBody {
+		return len(b), nil
+	}
+
 	size, err := w.writer.Write(b)
 	w.size += size
 	return size, err
