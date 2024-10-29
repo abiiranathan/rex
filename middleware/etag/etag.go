@@ -37,17 +37,27 @@ func (e *etagResponseWriter) Write(p []byte) (int, error) {
 	return e.w.Write(p)
 }
 
+// Flush sends any buffered data to the client.
 func (e *etagResponseWriter) Flush() {
 	if f, ok := e.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
+// Hijack lets the caller take over the connection.
+// After a call to Hijack the HTTP server library
+// will not do anything else with the connection
 func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := e.ResponseWriter.(http.Hijacker); ok {
 		return h.Hijack()
 	}
 	return nil, nil, http.ErrNotSupported
+}
+
+// Satisfy http.ResponseController support (Go 1.20+)
+// More about ResponseController: https://go.dev/ref/spec#ResponseController
+func (w *etagResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 func New(skip ...func(r *http.Request) bool) rex.Middleware {

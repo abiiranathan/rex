@@ -1,15 +1,16 @@
 # rex
 
-**rex** is a minimalistic yet robust HTTP router built on Go 1.22’s enhanced `http.ServeMux`. It offers a range of features for rapid web application development, including:
+**rex** is a minimalistic but robust HTTP router built on Go 1.22’s enhanced `http.ServeMux`. It offers a range of features for rapid web application development, including:
 
 - **Middleware Support**: Apply middleware globally or to specific routes and groups.
 - **Helper Methods**: Simplify defining routes and working with request/response handlers.
-- **Template Rendering**: Includes automatic template inheritance (e.g., using a base template).
+- **Template Rendering**: Includes automatic template inheritance (e.g., using a base template), passing context data to templates, an error template that displays error messages, and more.
 - **Body Parsing**: Supports decoding multiple content types:
   - JSON
   - XML
   - URL-encoded and multipart forms  
   Works with standard Go types, pointers, slices, and custom types implementing the `rex.FormScanner` interface.
+- **Validation**: Validate request data using the `validator` package.
 - **SPA Support**:  
   Use `r.SPA` to serve a single-page application.
 - **Route Grouping and Subgroups**:  
@@ -20,6 +21,7 @@
   - **ETag Support**: For caching optimization.
   - **CORS Handling**: Cross-Origin Resource Sharing middleware.
   - **Seesion based cookie auth, Basic Auth & JWT Middleware**: Secure your routes with seesion, basic or token-based authentication.
+  - CSRF Protection: Protect your routes from CSRF attacks with the CSRF middleware.
 - **Custom Middleware**:  
   Implement your own middleware by wrapping `rex.Handler`.
 - **Static File Serving**:  

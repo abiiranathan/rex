@@ -22,6 +22,8 @@ func (rw *ResponseWriter) Header() http.Header {
 	return rw.writer.Header()
 }
 
+// WriteHeader writes the status code to the response.
+// Calling the method more than once will have no effect.
 func (w *ResponseWriter) WriteHeader(status int) {
 	if w.statusSent {
 		return
@@ -31,6 +33,9 @@ func (w *ResponseWriter) WriteHeader(status int) {
 	w.statusSent = true
 }
 
+// Write writes the data to the connection as part of an HTTP reply.
+// Satisfies the io.Writer interface.
+// Calling this with a HEAD request will only write the headers if they haven't been written yet.
 func (w *ResponseWriter) Write(b []byte) (int, error) {
 	if !w.statusSent {
 		w.WriteHeader(http.StatusOK)
@@ -54,13 +59,15 @@ func (w *ResponseWriter) Size() int {
 	return w.size
 }
 
-// Implement additional interfaces
+// Implements the http.Flusher interface to allow an HTTP handler to flush buffered data to the client.
+// This is useful for chunked responses and server-sent events.
 func (w *ResponseWriter) Flush() {
 	if f, ok := w.writer.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
+// Hijack lets the caller take over the connection.
 func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := w.writer.(http.Hijacker); ok {
 		return h.Hijack()
@@ -68,6 +75,9 @@ func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("hijacking not supported")
 }
 
+// ReadFrom reads data from an io.Reader and writes it to the connection.
+// All data is written in a single call to Write, so the data should be buffered.
+// The return value is the number of bytes written and an error, if any.
 func (w *ResponseWriter) ReadFrom(r io.Reader) (n int64, err error) {
 	if !w.statusSent {
 		// The status will be StatusOK if WriteHeader has not been called yet
@@ -80,6 +90,7 @@ func (w *ResponseWriter) ReadFrom(r io.Reader) (n int64, err error) {
 }
 
 // Satisfy http.ResponseController support (Go 1.20+)
+// More about ResponseController: https://go.dev/ref/spec#ResponseController
 func (w *ResponseWriter) Unwrap() http.ResponseWriter {
 	return w.writer
 }

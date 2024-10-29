@@ -37,6 +37,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
@@ -251,6 +252,46 @@ func (r *Router) Use(middlewares ...Middleware) {
 	r.globalMiddlewares = append(r.globalMiddlewares, middlewares...)
 }
 
+// Pool for reusing context objects
+var ctxPool = sync.Pool{
+	New: func() any {
+		return &Context{
+			locals: make(map[any]any),
+		}
+	},
+}
+
+// Get a context from the pool
+func (r *Router) getContext() *Context {
+	return ctxPool.Get().(*Context)
+}
+
+// Put the context back in the pool
+func (r *Router) putContext(c *Context) {
+	c.reset()
+	ctxPool.Put(c)
+}
+
+// Init context
+func (r *Router) initContext(w http.ResponseWriter, req *http.Request) *Context {
+	c := r.getContext()
+	c.Request = req
+	c.Response = &ResponseWriter{
+		writer: w,
+		status: http.StatusOK,
+	}
+	c.router = r
+	return c
+}
+
+// Reset the context
+func (c *Context) reset() {
+	c.Request = nil
+	c.Response = nil
+	c.router = nil
+	c.locals = make(map[any]any)
+}
+
 // Handle registers a new route with the given path and handler
 func (r *Router) Handle(method, pattern string, handler HandlerFunc, middlewares ...Middleware) {
 	if StrictHome && pattern == "/" {
@@ -294,18 +335,10 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, middlewares
 			skipBody = true
 		}
 
-		rw := &ResponseWriter{
-			writer:   w,
-			status:   http.StatusOK,
-			skipBody: skipBody,
-		}
+		ctx := r.initContext(w, req)
+		defer r.putContext(ctx)
 
-		ctx := &Context{
-			Request:  req,
-			Response: rw,
-			router:   r,
-			locals:   make(map[any]any),
-		}
+		ctx.Response.skipBody = skipBody
 
 		// Execute the handler and handle any errors
 		if err := final(ctx); err != nil {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/abiiranathan/rex"
 )
@@ -1176,4 +1177,64 @@ func TestCreateFileSystem(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func BenchmarkRequestsPerSecond(b *testing.B) {
+	// Setup router
+	r := rex.NewRouter()
+	r.GET("/benchmark", func(c *rex.Context) error {
+		return c.String("Hello World!")
+	})
+
+	// Create test server
+	ts := httptest.NewServer(r)
+	defer ts.Close()
+
+	// Create HTTP client with timeouts
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	// Reset timer to exclude setup time
+	b.ResetTimer()
+
+	// Run parallel benchmark
+	b.SetParallelism(4)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			res, err := client.Get(ts.URL + "/benchmark")
+			if err != nil {
+				b.Fatal(err)
+			}
+			if res.StatusCode != http.StatusOK {
+				b.Fatalf("expected status 200, got %d", res.StatusCode)
+			}
+
+			// Make sure to read and close the body to reuse connections
+			_, err = io.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// Benchmark and calculate requests per second
+func TestRequestsPerSecond(t *testing.T) {
+	result := testing.Benchmark(BenchmarkRequestsPerSecond)
+
+	// Calculate requests per second
+	requestsPerSecond := float64(result.N) / result.T.Seconds()
+
+	t.Logf("Requests per second: %.2f", requestsPerSecond)
+	t.Logf("Total requests: %d", result.N)
+	t.Logf("Total time: %s", result.T)
+	t.Logf("Memory allocations: %d", result.AllocsPerOp())
+	t.Logf("Bytes allocated per op: %d", result.AllocedBytesPerOp())
 }

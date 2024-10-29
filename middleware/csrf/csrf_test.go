@@ -32,7 +32,7 @@ func testMiddleware(method, url string, body string, cookie *http.Cookie, handle
 
 // Test that the CSRF token is generated and set in the cookie.
 func TestCSRFTokenGeneration(t *testing.T) {
-	handler := csrf.New(store, false)(rex.HandlerFunc(func(ctx *rex.Context) error {
+	handler := csrf.New(store, true)(rex.HandlerFunc(func(ctx *rex.Context) error {
 		_, err := ctx.Response.Write([]byte("OK"))
 		require.NoError(t, err)
 		return nil
