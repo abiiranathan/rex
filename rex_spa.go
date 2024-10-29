@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -90,6 +91,7 @@ func loadIndexFile(fs http.FileSystem, indexPath string) ([]byte, time.Time, err
 
 // ServeHTTP handles the actual request
 func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("SPA: %s", r.URL.Path)
 	if h.skipFunc != nil && h.skipFunc(r) {
 		http.NotFound(w, r)
 		return
@@ -133,8 +135,7 @@ func (r *Router) SPA(pattern string, index string, frontend http.FileSystem, opt
 	}
 
 	// Apply global middleware
-	wrappedHandler := r.chain(r.globalMiddlewares, r.WrapHandler(handler))
-	r.mux.Handle(pattern, wrappedHandler)
+	r.mux.Handle(fmt.Sprintf("GET %s", pattern), handler)
 }
 
 // Creates a new http.FileSystem from the fs.FS (e.g embed.FS) with the root directory.

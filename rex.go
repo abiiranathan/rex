@@ -96,19 +96,6 @@ func (r *Router) ToHTTPHandler(h HandlerFunc) http.Handler {
 	})
 }
 
-// Convert HandlerFunc to http.Handler. Note that this will not work with middlewares
-// as the context is not passed to the handler and the router is not set(i.e c.router is nil).
-func (h HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := &Context{
-		Request:  r,
-		Response: &ResponseWriter{writer: w},
-		router:   nil,
-		locals:   make(map[any]any),
-	}
-
-	h(ctx)
-}
-
 // WrapMiddleware wraps an http middleware to be used as a rex middleware.
 func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
@@ -311,14 +298,16 @@ func (c *Context) reset() {
 }
 
 // Handle registers a new route with the given path and handler
-func (r *Router) Handle(method, pattern string, handler HandlerFunc, middlewares ...Middleware) {
+func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static bool, middlewares ...Middleware) {
 	if StrictHome && pattern == "/" {
 		pattern = pattern + "{$}" // Match only the root pattern
 	}
 
-	// remove trailing slashes
-	if NoTrailingSlash && pattern != "/" {
-		pattern = strings.TrimSuffix(pattern, "/")
+	// remove trailing slashes if not a static route
+	if !is_static {
+		if NoTrailingSlash && pattern != "/" {
+			pattern = strings.TrimSuffix(pattern, "/")
+		}
 	}
 
 	// Combine global and route-specific middlewares
@@ -367,43 +356,43 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, middlewares
 
 // Common HTTP method handlers
 func (r *Router) GET(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodGet, pattern, handler, middlewares...)
+	r.Handle(http.MethodGet, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) POST(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodPost, pattern, handler, middlewares...)
+	r.Handle(http.MethodPost, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) PUT(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodPut, pattern, handler, middlewares...)
+	r.Handle(http.MethodPut, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) PATCH(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodPatch, pattern, handler, middlewares...)
+	r.Handle(http.MethodPatch, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) DELETE(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodDelete, pattern, handler, middlewares...)
+	r.Handle(http.MethodDelete, pattern, handler, false, middlewares...)
 }
 
 // OPTIONS. This may not be necessary as registering GET request automatically registers OPTIONS.
 func (r *Router) OPTIONS(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodOptions, pattern, handler, middlewares...)
+	r.Handle(http.MethodOptions, pattern, handler, false, middlewares...)
 }
 
 // HEAD request.
 func (r *Router) HEAD(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodHead, pattern, handler, middlewares...)
+	r.Handle(http.MethodHead, pattern, handler, false, middlewares...)
 }
 
 // TRACE http request.
 func (r *Router) TRACE(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodTrace, pattern, handler, middlewares...)
+	r.Handle(http.MethodTrace, pattern, handler, false, middlewares...)
 }
 
 // CONNECT http request.
 func (r *Router) CONNECT(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodConnect, pattern, handler, middlewares...)
+	r.Handle(http.MethodConnect, pattern, handler, false, middlewares...)
 }
 
 // ServeHTTP implements the http.Handler interface
@@ -482,9 +471,8 @@ func (r *Router) Static(prefix, dir string, maxAge ...int) {
 		cacheDuration = maxAge[0]
 	}
 
-	r.mux.Handle(prefix, r.chain(r.globalMiddlewares,
-		r.WrapHandler(staticHandler(prefix, dir, cacheDuration))),
-	)
+	handler := r.WrapHandler(staticHandler(prefix, dir, cacheDuration))
+	r.Handle(http.MethodGet, prefix, handler, true)
 }
 
 // Wrapper around http.ServeFile but applies global middleware to the handler.
@@ -600,8 +588,8 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 	}
 
 	// Apply global middleware
-	finalHandler := r.chain(r.globalMiddlewares, r.WrapHandler(http.StripPrefix(prefix, handler)))
-	r.mux.Handle(prefix, finalHandler)
+	finalHandler := r.WrapHandler(http.StripPrefix(prefix, handler))
+	r.Handle(http.MethodGet, prefix, finalHandler, true)
 }
 
 type RedirectOptions struct {
