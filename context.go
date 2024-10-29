@@ -152,6 +152,24 @@ func (c *Context) ParamInt(key string, defaults ...int) int {
 	return vInt
 }
 
+// paramUInt returns the value of the parameter as an unsigned integer
+// If the parameter is not found, it checks the redirect options.
+func (c *Context) ParamUInt(key string, defaults ...uint) uint {
+	v := c.Param(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	vInt, err := strconv.Atoi(v)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return uint(vInt)
+}
+
 // Query returns the value of the query as a string.
 // If the query is not found, it checks the redirect options.
 func (c *Context) Query(key string, defaults ...string) string {
@@ -188,6 +206,24 @@ func (c *Context) QueryInt(key string, defaults ...int) int {
 	return vInt
 }
 
+// QueryUInt returns the value of the query as an unsigned integer
+// If the query is not found, it checks the redirect options.
+func (c *Context) QueryUInt(key string, defaults ...uint) uint {
+	v := c.Query(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	vInt, err := strconv.Atoi(v)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return uint(vInt)
+}
+
 // Set stores a value in the context
 func (c *Context) Set(key interface{}, value interface{}) {
 	c.mu.Lock()
@@ -213,6 +249,16 @@ func (c *Context) MustGet(key interface{}) interface{} {
 	value, exists := c.Get(key)
 	if !exists {
 		panic("key not found")
+	}
+	return value
+}
+
+// GetOrEmpty retrieves a value from the context or returns nil if the key does not exist.
+// This better when you want to type-cast the value to a specific type without checking for existence.
+func (c *Context) GetOrEmpty(key interface{}) any {
+	value, exists := c.Get(key)
+	if !exists {
+		return nil
 	}
 	return value
 }
@@ -276,8 +322,45 @@ func (c *Context) TranslateErrors(errs validator.ValidationErrors) map[string]st
 	return errs.Translate(c.router.translator)
 }
 
+// Returns the form value by key.
 func (c *Context) FormValue(key string) string {
 	return c.Request.FormValue(key)
+}
+
+// Returns the form value by key as an integer.
+// If the value is not found or cannot be converted to an integer, it returns the default value.
+func (c *Context) FormValueInt(key string, defaults ...int) int {
+	v := c.FormValue(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	vInt, err := strconv.Atoi(v)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return vInt
+}
+
+// Returns the form value by key as an unsigned integer.
+// If the value is not found or cannot be converted to an unsigned integer, it returns the default value.
+func (c *Context) FormValueUInt(key string, defaults ...uint) uint {
+	v := c.FormValue(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	vInt, err := strconv.Atoi(v)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return uint(vInt)
 }
 
 func (c *Context) FormFile(key string) (multipart.File, *multipart.FileHeader, error) {
@@ -317,4 +400,24 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 // Returns the *rex.Router instance.
 func (c *Context) Router() *Router {
 	return c.router
+}
+
+// Path returns the request path.
+func (c *Context) Path() string {
+	return c.Request.URL.Path
+}
+
+// Method returns the request method.
+func (c *Context) Method() string {
+	return c.Request.Method
+}
+
+// Host returns the request host.
+func (c *Context) Host() string {
+	return c.Request.Host
+}
+
+// URL returns the request URL.
+func (c *Context) URL() string {
+	return c.Request.URL.String()
 }
