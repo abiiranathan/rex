@@ -17,23 +17,23 @@ func TestRouterGroupMethods(t *testing.T) {
 	r := rex.NewRouter()
 	admin := r.Group("/admin")
 
-	admin.Get("/home", func(c *rex.Context) error {
+	admin.GET("/home", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
-	admin.Post("/home", func(c *rex.Context) error {
+	admin.POST("/home", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
-	admin.Put("/home", func(c *rex.Context) error {
+	admin.PUT("/home", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
-	admin.Patch("/home", func(c *rex.Context) error {
+	admin.PATCH("/home", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
-	admin.Delete("/home", func(c *rex.Context) error {
+	admin.DELETE("/home", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
@@ -114,7 +114,7 @@ func TestGroupMiddleware(t *testing.T) {
 		}
 	})
 
-	admin.Get("/test", func(c *rex.Context) error {
+	admin.GET("/test", func(c *rex.Context) error {
 		admin, ok := c.Get("admin")
 		if !ok {
 			c.WriteHeader(http.StatusInternalServerError)
@@ -142,11 +142,11 @@ func TestRouterGroup(t *testing.T) {
 	r := rex.NewRouter()
 	admin := r.Group("/admin")
 
-	admin.Get("/home", func(c *rex.Context) error {
+	admin.GET("/home", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
-	admin.Get("/users", func(c *rex.Context) error {
+	admin.GET("/users", func(c *rex.Context) error {
 		return c.String("test2")
 	})
 
@@ -187,7 +187,7 @@ func TestRouterGroupMiddleware(t *testing.T) {
 		}
 	})
 
-	admin.Get("/test", func(c *rex.Context) error {
+	admin.GET("/test", func(c *rex.Context) error {
 		admin, ok := c.Get("admin")
 		if !ok {
 			c.WriteHeader(http.StatusInternalServerError)
@@ -216,7 +216,7 @@ func TestRouterNestedGroup(t *testing.T) {
 	admin := r.Group("/admin")
 	users := admin.Group("/users")
 
-	users.Get("/test", func(c *rex.Context) error {
+	users.GET("/test", func(c *rex.Context) error {
 		return c.String("test")
 	})
 
