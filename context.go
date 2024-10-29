@@ -208,6 +208,15 @@ func (c *Context) Get(key interface{}) (value interface{}, exists bool) {
 	return
 }
 
+// MustGet retrieves a value from the context or panics if the key does not exist.
+func (c *Context) MustGet(key interface{}) interface{} {
+	value, exists := c.Get(key)
+	if !exists {
+		panic("key not found")
+	}
+	return value
+}
+
 // Locals returns the context values
 func (c *Context) Locals() map[any]any {
 	return c.locals

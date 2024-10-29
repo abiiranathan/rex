@@ -2,6 +2,7 @@ package rex_test
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"io"
@@ -364,6 +365,35 @@ func TestRouterMiddleware(t *testing.T) {
 	if w.Body.String() != "johndoe" {
 		t.Errorf("expected johndoe, got %s", w.Body.String())
 	}
+}
+
+func TestWrapMiddleware(t *testing.T) {
+	httpMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*r = *r.WithContext(context.WithValue(r.Context(), "X-Test", "test"))
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	r := rex.NewRouter()
+	r.Use(rex.WrapMiddleware(httpMiddleware))
+
+	r.GET("/wrap", func(c *rex.Context) error {
+		return c.String(c.Request.Context().Value("X-Test").(string))
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/wrap", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	if w.Body.String() != "test" {
+		t.Errorf("expected test, got %s", w.Body.String())
+	}
+
 }
 
 const msgKey contextType = "message"

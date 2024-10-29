@@ -109,6 +109,20 @@ func (h HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(ctx)
 }
 
+// WrapMiddleware wraps an http middleware to be used as a rex middleware.
+func WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
+	return func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next(c)
+			})
+			handler = middleware(handler)
+			handler.ServeHTTP(c.Response, c.Request)
+			return nil
+		}
+	}
+}
+
 // Router is the main router structure
 type Router struct {
 	mux               *http.ServeMux        // http.ServeMux
