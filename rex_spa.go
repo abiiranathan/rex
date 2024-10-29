@@ -133,7 +133,7 @@ func (r *Router) SPA(pattern string, index string, frontend http.FileSystem, opt
 	}
 
 	// Apply global middleware
-	wrappedHandler := r.chain(r.globalMiddlewares, WrapHandler(handler))
+	wrappedHandler := r.chain(r.globalMiddlewares, r.WrapHandler(handler))
 	r.mux.Handle(pattern, wrappedHandler)
 }
 

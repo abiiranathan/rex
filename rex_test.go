@@ -376,7 +376,7 @@ func TestWrapMiddleware(t *testing.T) {
 	}
 
 	r := rex.NewRouter()
-	r.Use(rex.WrapMiddleware(httpMiddleware))
+	r.Use(r.WrapMiddleware(httpMiddleware))
 
 	r.GET("/wrap", func(c *rex.Context) error {
 		return c.String(c.Request.Context().Value("X-Test").(string))

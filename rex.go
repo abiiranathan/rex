@@ -72,20 +72,8 @@ type Middleware func(HandlerFunc) HandlerFunc
 // Generic type for response data
 type Map map[string]any
 
-// Convert http.HandlerFunc to HandlerFunc
-func WrapFunc(h http.HandlerFunc) HandlerFunc {
-	return func(c *Context) error {
-		// copy over context values
-		for k, v := range c.locals {
-			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), k, v))
-		}
-		h(c.Response, c.Request)
-		return nil
-	}
-}
-
-// Convert http.Handler to HandlerFunc
-func WrapHandler(h http.Handler) HandlerFunc {
+// WrapHandler wraps an http.Handler to be used as a HandlerFunc while preserving router access
+func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
 	return func(c *Context) error {
 		// copy over context values
 		for k, v := range c.locals {
@@ -94,6 +82,18 @@ func WrapHandler(h http.Handler) HandlerFunc {
 		h.ServeHTTP(c.Response, c.Request)
 		return nil
 	}
+}
+
+// Convert HandlerFunc to http.Handler with router access
+func (r *Router) ToHTTPHandler(h HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := r.initContext(w, req)
+		defer r.putContext(ctx)
+
+		if err := h(ctx); err != nil {
+			r.errorHandler(ctx, err)
+		}
+	})
 }
 
 // Convert HandlerFunc to http.Handler. Note that this will not work with middlewares
@@ -110,12 +110,16 @@ func (h HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // WrapMiddleware wraps an http middleware to be used as a rex middleware.
-func WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
+func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if c.router == nil {
+					c.router = router
+				}
 				next(c)
 			})
+
 			handler = middleware(handler)
 			handler.ServeHTTP(c.Response, c.Request)
 			return nil
@@ -479,7 +483,7 @@ func (r *Router) Static(prefix, dir string, maxAge ...int) {
 	}
 
 	r.mux.Handle(prefix, r.chain(r.globalMiddlewares,
-		WrapHandler(staticHandler(prefix, dir, cacheDuration))),
+		r.WrapHandler(staticHandler(prefix, dir, cacheDuration))),
 	)
 }
 
@@ -488,12 +492,13 @@ func (r *Router) File(path, file string) {
 	var hf http.HandlerFunc = func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, file)
 	}
-	handler := r.chain(r.globalMiddlewares, WrapFunc(hf))
+
+	handler := r.chain(r.globalMiddlewares, r.WrapHandler(hf))
 	r.GET(path, handler)
 }
 
 func (r *Router) FileFS(fs http.FileSystem, prefix, path string) {
-	r.GET(prefix, WrapFunc(func(w http.ResponseWriter, req *http.Request) {
+	r.GET(prefix, r.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		f, err := fs.Open(path)
 		if err != nil {
 			http.NotFound(w, req)
@@ -509,7 +514,7 @@ func (r *Router) FileFS(fs http.FileSystem, prefix, path string) {
 
 		w.WriteHeader(http.StatusOK)
 		http.ServeContent(w, req, path, stat.ModTime(), f)
-	}))
+	})))
 }
 
 // Serve favicon.ico from the file system fs at path.
@@ -543,7 +548,7 @@ func (r *Router) FaviconFS(fs http.FileSystem, path string) {
 		w.Write(data)
 	})
 
-	r.GET("/favicon.ico", WrapHandler(handler))
+	r.GET("/favicon.ico", r.WrapHandler(handler))
 }
 
 type minifiedFS struct {
@@ -595,7 +600,7 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 	}
 
 	// Apply global middleware
-	finalHandler := r.chain(r.globalMiddlewares, WrapHandler(http.StripPrefix(prefix, handler)))
+	finalHandler := r.chain(r.globalMiddlewares, r.WrapHandler(http.StripPrefix(prefix, handler)))
 	r.mux.Handle(prefix, finalHandler)
 }
 
