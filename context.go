@@ -367,7 +367,7 @@ func (c *Context) FormFile(key string) (multipart.File, *multipart.FileHeader, e
 	return c.Request.FormFile(key)
 }
 
-func (c *Context) FormFiles(key string, maxMemory ...int64) (map[string][]*multipart.FileHeader, error) {
+func (c *Context) FormFiles(key string, maxMemory ...int64) ([]*multipart.FileHeader, error) {
 	var memory int64 = 10 << 20 // 10 MB
 	if len(maxMemory) > 0 {
 		memory = maxMemory[0]
@@ -376,7 +376,12 @@ func (c *Context) FormFiles(key string, maxMemory ...int64) (map[string][]*multi
 	if err != nil {
 		return nil, err
 	}
-	return c.Request.MultipartForm.File, nil
+
+	if files, ok := c.Request.MultipartForm.File[key]; ok {
+		return files, nil
+	}
+
+	return nil, fmt.Errorf("no files match the given key")
 }
 
 // save file from multipart form to disk
