@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/pkg/errors"
@@ -419,6 +420,16 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 func (c *Context) Status() int {
 	if wrapped, ok := c.Response.(*ResponseWriter); ok {
 		return wrapped.status
+	} else {
+		return 0
+	}
+}
+
+// Latency returns the duration of the request including the time it took to write the response,
+// execute the middleware and the handler.
+func (c *Context) Latency() time.Duration {
+	if wrapped, ok := c.Response.(*ResponseWriter); ok {
+		return wrapped.latency
 	} else {
 		return 0
 	}

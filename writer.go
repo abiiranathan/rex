@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 )
 
 // ResponseWriter wraps http.ResponseWriter with additional functionality
@@ -15,6 +16,7 @@ type ResponseWriter struct {
 	size       int                 // The size of the response sent so far
 	statusSent bool                // If the status has been sent
 	skipBody   bool                // If its a HEAD request, we should skip the body
+	latency    time.Duration       // The latency of the response.
 }
 
 // ResponseWriter interface

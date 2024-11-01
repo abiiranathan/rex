@@ -38,6 +38,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
@@ -350,27 +351,35 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static b
 	}
 
 	r.mux.HandleFunc(routePattern, func(w http.ResponseWriter, req *http.Request) {
-		var skipBody bool
-		// Only handle requests with matching method
-		if req.Method != method {
-			// Allow HEAD requests for GET routes
-			// OPTIONS/TRACE and other methods are not allowed and must be defined explicitly.
-			allowed := method == http.MethodGet && req.Method == http.MethodHead
-			if !allowed {
-				http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			skipBody = true
-		}
+		start := time.Now()
 
 		ctx := r.InitContext(w, req)
 		defer r.PutContext(ctx)
+
+		var skipBody bool
+		if req.Method != method {
+			// Allow HEAD requests for GET routes as this is allowed by the new Go 1.22 router.
+			allowed := method == http.MethodGet && req.Method == http.MethodHead
+			if !allowed {
+				ctx.WriteHeader(http.StatusMethodNotAllowed)
+				r.errorHandler(ctx, fmt.Errorf("method not allowed"))
+				return
+			}
+
+			// Skip the body for HEAD requests
+			skipBody = true
+		}
 
 		// Router logic
 		ctx.Response.(*ResponseWriter).skipBody = skipBody
 
 		// Execute the handler and handle any errors
 		err := final(ctx)
+
+		end := time.Now()
+
+		latency := end.Sub(start)
+		ctx.Response.(*ResponseWriter).latency = latency
 
 		// Call the error handler if an error is returned or not
 		// This allows the errorHandler to handle errors that are not returned by the handler.
