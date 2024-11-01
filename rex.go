@@ -172,6 +172,11 @@ func WithLogger(logger *slog.Logger) RouterOption {
 	}
 }
 
+// GetLogger returns the *slog.Logger instance.
+func (c *Context) GetLogger() *slog.Logger {
+	return c.router.logger
+}
+
 // defaultErrorHandler is the default error handler for the router.
 // It handles errors centrally and logs and writes the error to the response.
 // The logger can be replaced with a custom logger using WithLogger option.
