@@ -21,7 +21,7 @@ import (
 // Context represents the context of the current HTTP request
 type Context struct {
 	Request  *http.Request
-	Response *ResponseWriter
+	Response http.ResponseWriter
 	router   *Router
 	locals   map[any]any
 	mu       sync.RWMutex
@@ -29,7 +29,20 @@ type Context struct {
 
 // SetHeader sets a header in the response
 func (c *Context) SetHeader(key, value string) {
-	c.Response.writer.Header().Set(key, value)
+	if wrapped, ok := c.Response.(*ResponseWriter); ok {
+		wrapped.writer.Header().Set(key, value)
+	} else {
+		c.Response.Header().Set(key, value)
+	}
+}
+
+// DelHeader deletes a header in the response
+func (c *Context) DelHeader(key string) {
+	if wrapped, ok := c.Response.(*ResponseWriter); ok {
+		wrapped.writer.Header().Del(key)
+	} else {
+		c.Response.Header().Del(key)
+	}
 }
 
 // GetHeader returns the status code of the response
@@ -400,6 +413,15 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 
 	_, err = io.Copy(out, src)
 	return err
+}
+
+// Returns the status code of the response.
+func (c *Context) Status() int {
+	if wrapped, ok := c.Response.(*ResponseWriter); ok {
+		return wrapped.status
+	} else {
+		return 0
+	}
 }
 
 // Returns the *rex.Router instance.

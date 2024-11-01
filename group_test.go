@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/abiiranathan/rex"
-	"github.com/abiiranathan/rex/middleware/logger"
 )
 
 // test group GET, POST, PUT, PATCH, DELETE
@@ -293,8 +292,6 @@ func TestRouterGroupStaticFS(t *testing.T) {
 	}
 
 	r := rex.NewRouter()
-	loggerMw := logger.New(logger.DefaultConfig)
-	r.Use(loggerMw)
 
 	admin := r.Group("/admin")
 	admin.StaticFs("/static", http.Dir(dirname), 3600)

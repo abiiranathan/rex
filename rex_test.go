@@ -577,7 +577,7 @@ func TestRouterStatic(t *testing.T) {
 }
 
 func TestRouterStaticFS(t *testing.T) {
-	dirname, err := os.MkdirTemp("", "static")
+	dirname, err := os.MkdirTemp("", "assests")
 	if err != nil {
 		t.Fatalf("could not create temp dir: %v", err)
 	}
@@ -720,8 +720,9 @@ func TestRouterRedirectRoute(t *testing.T) {
 	})
 
 	r.GET("/redirect_route2", func(c *rex.Context) error {
-		if c.Response.Status() != http.StatusFound {
-			t.Errorf("expected status 302, got %d", c.Response.Status())
+		status := c.Response.(*rex.ResponseWriter).Status()
+		if status != http.StatusFound {
+			t.Errorf("expected status 302, got %d", status)
 		}
 		return c.String("redirect_route2")
 	})

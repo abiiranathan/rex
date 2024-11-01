@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -91,7 +90,6 @@ func loadIndexFile(fs http.FileSystem, indexPath string) ([]byte, time.Time, err
 
 // ServeHTTP handles the actual request
 func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("SPA: %s", r.URL.Path)
 	if h.skipFunc != nil && h.skipFunc(r) {
 		http.NotFound(w, r)
 		return

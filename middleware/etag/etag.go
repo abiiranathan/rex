@@ -3,6 +3,8 @@ package etag
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha1"
+	"fmt"
 	"hash"
 	"io"
 	"net"
@@ -35,16 +37,12 @@ func (e *etagResponseWriter) Write(p []byte) (int, error) {
 	return e.w.Write(p)
 }
 
-// Flush sends any buffered data to the client.
 func (e *etagResponseWriter) Flush() {
 	if f, ok := e.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-// Hijack lets the caller take over the connection.
-// After a call to Hijack the HTTP server library
-// will not do anything else with the connection
 func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := e.ResponseWriter.(http.Hijacker); ok {
 		return h.Hijack()
@@ -52,12 +50,11 @@ func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, http.ErrNotSupported
 }
 
-// Satisfy http.ResponseController support (Go 1.20+)
-// More about ResponseController: https://go.dev/ref/spec#ResponseController
-func (w *etagResponseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
+func (e *etagResponseWriter) Status() int {
+	return e.status
 }
 
+// Create a new etag middleware.
 func New(skip ...func(r *http.Request) bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -69,7 +66,7 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 				}
 			}
 
-			if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			if c.Method() != http.MethodGet && c.Method() != http.MethodHead {
 				skipEtag = true
 			}
 
@@ -77,45 +74,57 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 				return next(c)
 			}
 
-			// ew := &etagResponseWriter{
-			// 	// ResponseWriter: c.Response,
-			// 	buf:    bytes.Buffer{},
-			// 	hash:   sha1.New(),
-			// 	status: http.StatusOK,
-			// }
-			// ew.w = io.MultiWriter(&ew.buf, ew.hash)
+			ew := &etagResponseWriter{
+				ResponseWriter: c.Response,
+				buf:            bytes.Buffer{},
+				hash:           sha1.New(),
+				status:         http.StatusOK,
+			}
 
-			// TODO: Fix this
-			// next.ServeHTTP(ew, c.Request)
+			ew.w = io.MultiWriter(&ew.buf, ew.hash)
 
-			// if ew.status != http.StatusOK {
-			// 	// For non-200 responses, write the status and body without ETag
-			// 	c.WriteHeader(ew.status)
-			// 	_, err := ew.buf.WriteTo(c.Response)
-			// 	return err
-			// }
+			// Override the response writer
+			// This may cause some incompatibilities where
+			// the Response is assumed to be rex.ResponseWriter
+			originalWriter := c.Response
+			c.Response = ew
+			err := next(c)
+			// Restore writer
+			c.Response = originalWriter
 
-			// etag := fmt.Sprintf(`"%x"`, ew.hash.Sum(nil))
-			// c.Response.Header().Set("ETag", etag)
+			// Return error after restoring the response writer
+			if err != nil {
+				return err
+			}
 
-			// // Check If-None-Match and If-Match headers and return 304 or 412 if needed
-			// ifNoneMatch := c.Request.Header.Get("If-None-Match")
-			// if ifNoneMatch == etag {
-			// 	return c.WriteHeader(http.StatusNotModified)
-			// }
+			if ew.status != http.StatusOK {
+				// For non-200 responses, write the status and body without ETag
+				c.WriteHeader(ew.status)
+				_, err := ew.buf.WriteTo(c.Response)
+				return err
+			}
 
-			// // If-Match is not supported for GET requests
-			// ifMatch := c.Request.Header.Get("If-Match")
-			// if ifMatch != "" && ifMatch != etag {
-			// 	// If-Match header is present and doesn't match the ETag
-			// 	return c.WriteHeader(http.StatusPreconditionFailed)
-			// }
+			etag := fmt.Sprintf(`"%x"`, ew.hash.Sum(nil))
+			c.SetHeader("ETag", etag)
 
-			// // Write the status and body for 200 OK responses
-			// c.WriteHeader(ew.status)
-			// _, err := ew.buf.WriteTo(c.Response)
-			// return err
-			return nil
+			// Check If-None-Match and If-Match headers and return 304 or 412 if needed
+			ifNoneMatch := c.GetHeader("If-None-Match")
+			if ifNoneMatch == etag {
+				return c.WriteHeader(http.StatusNotModified)
+			}
+
+			// If-Match is not supported for GET requests
+			ifMatch := c.GetHeader("If-Match")
+			if ifMatch != "" && ifMatch != etag {
+				// If-Match header is present and doesn't match the ETag
+				return c.WriteHeader(http.StatusPreconditionFailed)
+			}
+
+			// Write the status and body for 200 OK responses
+			c.WriteHeader(ew.status)
+			_, err = ew.buf.WriteTo(c.Response)
+			return err
 		}
 	}
+
 }

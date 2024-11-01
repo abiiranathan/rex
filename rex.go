@@ -87,8 +87,8 @@ func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
 // Convert HandlerFunc to http.Handler with router access
 func (r *Router) ToHTTPHandler(h HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := r.initContext(w, req)
-		defer r.putContext(ctx)
+		ctx := r.InitContext(w, req)
+		defer r.PutContext(ctx)
 
 		if err := h(ctx); err != nil {
 			r.errorHandler(ctx, err)
@@ -104,7 +104,12 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 				if c.router == nil {
 					c.router = router
 				}
+
+				originalWriter := w
+				c.Response = w
 				next(c)
+				c.Response = originalWriter
+
 			})
 
 			handler = middleware(handler)
@@ -174,7 +179,10 @@ func WithLogger(logger *slog.Logger) RouterOption {
 // The default error handler can be replaced with a custom error handler using SetErrorHandler.
 func defaultErrorHandler(ctx *Context, err error) {
 	// Log the error
-	ctx.router.logger.Debug("ERROR", "error", err, "status", ctx.Response.Status(), "path", ctx.Request.URL.Path)
+	ctx.router.logger.Debug("ERROR", "error", err, "status",
+		ctx.Response.(*ResponseWriter).Status(), "path", ctx.Request.URL.Path)
+
+	fmt.Printf("error handler: %v\n", err)
 
 	if ve, ok := err.(validator.ValidationErrors); ok {
 		HandleValidationErrors(ctx, ve)
@@ -271,14 +279,14 @@ func (r *Router) getContext() *Context {
 	return ctxPool.Get().(*Context)
 }
 
-// Put the context back in the pool
-func (r *Router) putContext(c *Context) {
+// Put the context back in the pool.
+func (r *Router) PutContext(c *Context) {
 	c.reset()
 	ctxPool.Put(c)
 }
 
-// Init context
-func (r *Router) initContext(w http.ResponseWriter, req *http.Request) *Context {
+// Get context from the pool and initialize it with request and writer.
+func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context {
 	c := r.getContext()
 	c.Request = req
 	c.Response = &ResponseWriter{
@@ -327,8 +335,7 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static b
 		middlewares: middlewares,
 	}
 
-	// Convert HandlerFunc to http.HandlerFunc for ServeMux
-	r.mux.Handle(routePattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	r.mux.HandleFunc(routePattern, func(w http.ResponseWriter, req *http.Request) {
 		var skipBody bool
 		// Only handle requests with matching method
 		if req.Method != method {
@@ -342,16 +349,17 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static b
 			skipBody = true
 		}
 
-		ctx := r.initContext(w, req)
-		defer r.putContext(ctx)
+		ctx := r.InitContext(w, req)
+		defer r.PutContext(ctx)
 
-		ctx.Response.skipBody = skipBody
+		// Router logic
+		ctx.Response.(*ResponseWriter).skipBody = skipBody
 
 		// Execute the handler and handle any errors
 		if err := final(ctx); err != nil {
 			r.errorHandler(ctx, err)
 		}
-	}))
+	})
 }
 
 // Common HTTP method handlers
@@ -558,9 +566,9 @@ func (mfs *minifiedFS) Open(name string) (http.File, error) {
 }
 
 // Like Static but for http.FileSystem.
-// Use this to serve embedded assets with go/embed.
+// Example:
 //
-// mux.StaticFS("/static", http.FS(staticFs))
+//	app.StaticFS("/static", rex.CreateFileSystem(embedfs, "static"), 3600)
 //
 // To enable caching, provide maxAge seconds for cache duration.
 func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
@@ -583,7 +591,6 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 			// Set cache control headers with the specified maxAge
 			w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(cacheDuration))
 		}
-
 		http.FileServer(fs).ServeHTTP(w, r)
 	}
 

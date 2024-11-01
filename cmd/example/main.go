@@ -11,7 +11,6 @@ import (
 	"github.com/abiiranathan/rex"
 	"github.com/abiiranathan/rex/middleware/cors"
 	"github.com/abiiranathan/rex/middleware/csrf"
-	"github.com/abiiranathan/rex/middleware/etag"
 	"github.com/abiiranathan/rex/middleware/logger"
 	"github.com/abiiranathan/rex/middleware/recovery"
 	"github.com/gorilla/sessions"
@@ -37,7 +36,7 @@ func main() {
 
 	mux.Use(recovery.New(true))
 	mux.Use(logger.New(logger.DefaultConfig))
-	mux.Use(etag.New())
+	// mux.Use(etag.New())
 	mux.Use(cors.New())
 
 	// Create a cookie store.
