@@ -8,11 +8,14 @@ import (
 
 	"github.com/abiiranathan/rex"
 	"github.com/abiiranathan/rex/middleware/brotli"
+	"github.com/abiiranathan/rex/middleware/logger"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBrotliMiddleware(t *testing.T) {
 	r := rex.NewRouter()
+	r.Use(logger.New(nil))
+
 	r.Use(brotli.Brotli())
 
 	r.GET("/", func(c *rex.Context) error {

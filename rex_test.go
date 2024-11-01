@@ -720,7 +720,7 @@ func TestRouterRedirectRoute(t *testing.T) {
 	})
 
 	r.GET("/redirect_route2", func(c *rex.Context) error {
-		status := c.Response.(*rex.ResponseWriter).Status()
+		status := c.Status()
 		if status != http.StatusFound {
 			t.Errorf("expected status 302, got %d", status)
 		}

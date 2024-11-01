@@ -67,6 +67,9 @@ var DefaultConfig = &Config{
 	},
 }
 
+// New returns a new Logger middleware with the provided configuration.
+// The logger needs access to status code and thus must apear before middleware wrapping the default
+// response writer (like etags and Brotli)
 func New(config *Config) rex.Middleware {
 	if config == nil {
 		config = DefaultConfig
@@ -102,7 +105,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 		}
 
 		start := time.Now()
-		next(c)
+		err := next(c)
 		latency := time.Since(start).String()
 
 		var logger *slog.Logger
@@ -115,7 +118,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 			logger = slog.New(slog.NewTextHandler(l.Output, l.Options))
 		}
 
-		args := []any{"status", c.Response.(*rex.ResponseWriter).Status()}
+		args := []any{"status", c.Status()}
 		if l.Flags&LOG_LATENCY != 0 {
 			args = append(args, "latency", latency)
 		}
@@ -139,6 +142,6 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 		}
 
 		logger.Info("", args...)
-		return nil
+		return err
 	}
 }
