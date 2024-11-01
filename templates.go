@@ -76,13 +76,14 @@ func WithTemplates(t *template.Template) RouterOption {
 
 // render error template with the given error and status code.
 func (c *Context) renderErrorTemplate(err error, status ...int) error {
+	c.SetHeader("Content-Type", "text/html")
+
 	var statusCode = http.StatusInternalServerError
 	if len(status) > 0 {
 		statusCode = status[0]
 	}
 
-	// send the error
-	c.Response.Header().Set("Content-Type", "text/html")
+	c.Response.WriteHeader(statusCode)
 
 	if c.router.errorTemplate != "" {
 		return c.renderTemplate(c.router.errorTemplate, Map{
@@ -93,7 +94,6 @@ func (c *Context) renderErrorTemplate(err error, status ...int) error {
 
 	}
 
-	c.Response.WriteHeader(statusCode)
 	_, err = c.Write([]byte(err.Error()))
 	return err
 
