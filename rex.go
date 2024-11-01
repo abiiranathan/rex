@@ -178,11 +178,17 @@ func WithLogger(logger *slog.Logger) RouterOption {
 // It also handles validation errors and form errors.
 // The default error handler can be replaced with a custom error handler using SetErrorHandler.
 func defaultErrorHandler(ctx *Context, err error) {
-	// Log the error
-	ctx.router.logger.Debug("ERROR", "error", err, "status",
-		ctx.Response.(*ResponseWriter).Status(), "path", ctx.Request.URL.Path)
+	defer func() {
+		// Log the error on exit to ensure that the correct status code is set.
+		ctx.router.logger.Debug("ERROR", "error", err, "status",
+			ctx.Response.(*ResponseWriter).Status(),
+			"path", ctx.Request.URL.Path)
+	}()
 
-	fmt.Printf("error handler: %v\n", err)
+	// We must return early if there is no error.
+	if err == nil {
+		return
+	}
 
 	if ve, ok := err.(validator.ValidationErrors); ok {
 		HandleValidationErrors(ctx, ve)
@@ -255,7 +261,10 @@ func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) {
 	r.validator.RegisterValidationCtx(tag, fn, true)
 }
 
-// Set error handler for centralized error handling
+// Set error handler for centralized error handling.
+// This is called at the end of the request cycle to handle any errors that occur.
+// Be aware that the error handler is called even if the handler returns no error, so
+// you need to check if the error is nil before handling it.
 func (r *Router) SetErrorHandler(handler func(*Context, error)) {
 	r.errorHandler = handler
 }
@@ -356,9 +365,13 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static b
 		ctx.Response.(*ResponseWriter).skipBody = skipBody
 
 		// Execute the handler and handle any errors
-		if err := final(ctx); err != nil {
-			r.errorHandler(ctx, err)
-		}
+		err := final(ctx)
+
+		// Call the error handler if an error is returned or not
+		// This allows the errorHandler to handle errors that are not returned by the handler.
+		// e.g. errors that occur in the middleware.
+		// Also logging should be done in the errorHandler because the correct status code is set there.
+		r.errorHandler(ctx, err)
 	})
 }
 
