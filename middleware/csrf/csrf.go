@@ -7,7 +7,6 @@
 package csrf
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -71,9 +70,8 @@ func New(store sessions.Store, secureCookie bool) rex.Middleware {
 				return nil
 			}
 
-			// Continue with the next handler.
-			_reqContext := context.WithValue(req.Context(), formKeyName, token)
-			*req = *req.WithContext(_reqContext)
+			// Set the CSRF token in the context.
+			ctx.Set(formKeyName, token)
 			return next(ctx)
 		}
 	}
