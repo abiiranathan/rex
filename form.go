@@ -368,26 +368,20 @@ func setField(name string, fieldVal reflect.Value, value interface{}, timezone .
 				Field: name,
 			}
 		}
+
 	default:
-		// check if the field implements the FormScanner interface (even if it's a pointer)
-		if fieldVal.Kind() == reflect.Ptr {
-			if fieldVal.Elem().Kind() == reflect.Struct {
-				if scanner, ok := fieldVal.Interface().(FormScanner); ok {
-					return scanner.FormScan(value)
-				}
-			}
-		} else if fieldVal.Kind() == reflect.Struct {
-			// Check if the field implements the FormScanner interface
+		if fieldVal.CanAddr() {
 			if scanner, ok := fieldVal.Addr().Interface().(FormScanner); ok {
 				return scanner.FormScan(value)
 			}
-		} else {
-			return FormError{
-				Err:   fmt.Errorf("unsupported type: %s, a custom struct must implement rex.FormScanner interface", fieldVal.Kind()),
-				Kind:  UnsupportedType,
-				Field: name,
-			}
 		}
+
+		return FormError{
+			Err:   fmt.Errorf("unsupported type: %s, a custom struct must implement rex.FormScanner interface", fieldVal.Kind()),
+			Kind:  UnsupportedType,
+			Field: name,
+		}
+
 	}
 
 	return nil

@@ -46,6 +46,18 @@ func (d *Date) FormScan(value interface{}) error {
 
 type customInt int // Kind is int
 
+// Custom JSON type
+type JSON map[string]interface{}
+
+func (j *JSON) FormScan(value interface{}) error {
+	v, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("value is not a string")
+	}
+	*j = JSON{"value": v}
+	return nil
+}
+
 func TestSetField(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -67,6 +79,7 @@ func TestSetField(t *testing.T) {
 		{"Time", reflect.Struct, "2022-02-22T12:00:00Z", time.Date(2022, 2, 22, 12, 0, 0, 0, time.UTC)},
 		{"CustomStruct", reflect.Struct, "test", CustomStruct{Field1: "test"}},
 		{"Date", reflect.Struct, "2022-02-22", Date(time.Date(2022, 2, 22, 0, 0, 0, 0, time.UTC))},
+		{"JSON", reflect.TypeOf(JSON{}).Kind(), "test", JSON{"value": "test"}},
 	}
 
 	for _, tt := range tests {
@@ -94,6 +107,8 @@ func TestSetField(t *testing.T) {
 				case "Date":
 					fieldValue = reflect.ValueOf(new(Date)).Elem()
 				}
+			case reflect.TypeOf(JSON{}).Kind():
+				fieldValue = reflect.ValueOf(new(JSON)).Elem()
 			}
 
 			if err := setField(tt.name, fieldValue, tt.value); err != nil {
