@@ -80,7 +80,8 @@ func main() {
 
 		// log the csrf token
 		fmt.Println(c.Request.FormValue("csrf_token"))
-		return c.String("Username: %s, Password: %s", username, password)
+		res := fmt.Sprintf("Username: %s, Password: %s", username, password)
+		return c.String(res)
 	})
 
 	mux.FaviconFS(http.FS(static), "static/favicon.ico")

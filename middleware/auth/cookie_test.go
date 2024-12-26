@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -74,7 +75,8 @@ func TestCookieMiddleware(t *testing.T) {
 		if !authenticated {
 			t.Fatal("user is not authenticated")
 		}
-		return c.String("Welcome home: %s", state.(User).Username)
+		res := fmt.Sprintf("Welcome home: %s", state.(User).Username)
+		return c.String(res)
 	})
 
 	router.POST("/logout", func(c *rex.Context) error {

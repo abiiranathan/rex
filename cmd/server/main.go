@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"log"
 	"net/http"
 	"text/template"
@@ -69,7 +70,8 @@ func ApiHandler(c *rex.Context) error {
 func protectedHandler(c *rex.Context) error {
 	state, _ := auth.GetAuthState(c)
 	user := state.(User)
-	return c.String("Hello %s", user.Username)
+	res := fmt.Sprintf("Hello %s", user.Username)
+	return c.String(res)
 }
 
 func authErrorCallback(c *rex.Context) error {

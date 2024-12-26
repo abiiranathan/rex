@@ -320,8 +320,8 @@ func (c *Context) reset() {
 	c.locals = make(map[any]any)
 }
 
-// Handle registers a new route with the given path and handler
-func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static bool, middlewares ...Middleware) {
+// handle registers a new route with the given path and handler
+func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static bool, middlewares ...Middleware) {
 	if StrictHome && pattern == "/" {
 		pattern = pattern + "{$}" // Match only the root pattern
 	}
@@ -391,43 +391,43 @@ func (r *Router) Handle(method, pattern string, handler HandlerFunc, is_static b
 
 // Common HTTP method handlers
 func (r *Router) GET(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodGet, pattern, handler, false, middlewares...)
+	r.handle(http.MethodGet, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) POST(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodPost, pattern, handler, false, middlewares...)
+	r.handle(http.MethodPost, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) PUT(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodPut, pattern, handler, false, middlewares...)
+	r.handle(http.MethodPut, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) PATCH(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodPatch, pattern, handler, false, middlewares...)
+	r.handle(http.MethodPatch, pattern, handler, false, middlewares...)
 }
 
 func (r *Router) DELETE(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodDelete, pattern, handler, false, middlewares...)
+	r.handle(http.MethodDelete, pattern, handler, false, middlewares...)
 }
 
 // OPTIONS. This may not be necessary as registering GET request automatically registers OPTIONS.
 func (r *Router) OPTIONS(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodOptions, pattern, handler, false, middlewares...)
+	r.handle(http.MethodOptions, pattern, handler, false, middlewares...)
 }
 
 // HEAD request.
 func (r *Router) HEAD(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodHead, pattern, handler, false, middlewares...)
+	r.handle(http.MethodHead, pattern, handler, false, middlewares...)
 }
 
 // TRACE http request.
 func (r *Router) TRACE(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodTrace, pattern, handler, false, middlewares...)
+	r.handle(http.MethodTrace, pattern, handler, false, middlewares...)
 }
 
 // CONNECT http request.
 func (r *Router) CONNECT(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.Handle(http.MethodConnect, pattern, handler, false, middlewares...)
+	r.handle(http.MethodConnect, pattern, handler, false, middlewares...)
 }
 
 // ServeHTTP implements the http.Handler interface
@@ -507,7 +507,7 @@ func (r *Router) Static(prefix, dir string, maxAge ...int) {
 	}
 
 	handler := r.WrapHandler(staticHandler(prefix, dir, cacheDuration))
-	r.Handle(http.MethodGet, prefix, handler, true)
+	r.handle(http.MethodGet, prefix, handler, true)
 }
 
 // Wrapper around http.ServeFile but applies global middleware to the handler.
@@ -623,7 +623,7 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 
 	// Apply global middleware
 	finalHandler := r.WrapHandler(http.StripPrefix(prefix, handler))
-	r.Handle(http.MethodGet, prefix, finalHandler, true)
+	r.handle(http.MethodGet, prefix, finalHandler, true)
 }
 
 type RedirectOptions struct {

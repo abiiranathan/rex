@@ -71,9 +71,9 @@ func (c *Context) XML(data interface{}) error {
 }
 
 // String sends a string response
-func (c *Context) String(format string, values ...interface{}) error {
+func (c *Context) String(text string) error {
 	c.Response.Header().Set("Content-Type", "text/plain")
-	_, err := fmt.Fprintf(c.Response, format, values...)
+	_, err := c.Response.Write([]byte(text))
 	return err
 }
 
