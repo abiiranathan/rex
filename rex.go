@@ -106,11 +106,13 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 					c.router = router
 				}
 
-				originalWriter := w
+				originalWriter := c.Response
+				defer func() {
+					c.Response = originalWriter
+				}()
+
 				c.Response = w
 				next(c)
-				c.Response = originalWriter
-
 			})
 
 			handler = middleware(handler)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -380,6 +381,59 @@ func TestWrapMiddleware(t *testing.T) {
 
 	r.GET("/wrap", func(c *rex.Context) error {
 		return c.String(c.Request.Context().Value("X-Test").(string))
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/wrap", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	if w.Body.String() != "test" {
+		t.Errorf("expected test, got %s", w.Body.String())
+	}
+
+}
+
+type customResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *customResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *customResponseWriter) Status() int {
+	return w.status
+}
+
+func (w *customResponseWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Test Wrap middleware with custom http.ResponseWriter
+func TestWrapMiddlewareWithCustomResponseWriter(t *testing.T) {
+	logger := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cw := &customResponseWriter{ResponseWriter: w}
+			next.ServeHTTP(cw, r)
+
+			fmt.Printf("%s %s %d\n", r.Method, r.URL.Path, cw.Status())
+		})
+	}
+
+	r := rex.NewRouter()
+	r.Use(r.WrapMiddleware(logger))
+
+	r.GET("/wrap", func(c *rex.Context) error {
+		return c.String("test")
 	})
 
 	w := httptest.NewRecorder()
