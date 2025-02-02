@@ -125,7 +125,7 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 // Router is the main router structure
 type Router struct {
 	mux               *http.ServeMux        // http.ServeMux
-	routes            map[string]route      // map of routes
+	routes            map[string]*route     // map of routes
 	globalMiddlewares []Middleware          // global middlewares
 	errorHandler      func(*Context, error) // centralized error handler
 
@@ -153,12 +153,6 @@ type Router struct {
 
 	// Logger
 	logger *slog.Logger
-}
-
-type route struct {
-	prefix      string       // method + pattern
-	handler     HandlerFunc  // handler function
-	middlewares []Middleware // middlewares for the route
 }
 
 // Router option a function option for configuring the router.
@@ -221,7 +215,7 @@ func defaultErrorHandler(ctx *Context, err error) {
 func NewRouter(options ...RouterOption) *Router {
 	r := &Router{
 		mux:                http.NewServeMux(),
-		routes:             make(map[string]route),
+		routes:             make(map[string]*route),
 		passContextToViews: false,
 		baseLayout:         "",
 		contentBlock:       contentBlock,
@@ -323,7 +317,7 @@ func (c *Context) reset() {
 }
 
 // handle registers a new route with the given path and handler
-func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static bool, middlewares ...Middleware) {
+func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static bool, middlewares ...Middleware) *route {
 	if StrictHome && pattern == "/" {
 		pattern = pattern + "{$}" // Match only the root pattern
 	}
@@ -346,11 +340,14 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 
 	// Store the route
 	routePattern := method + " " + pattern
-	r.routes[routePattern] = route{
+	newRoute := &route{
 		prefix:      routePattern,
 		handler:     final,
 		middlewares: middlewares,
+		router:      r,
 	}
+
+	r.routes[routePattern] = newRoute
 
 	r.mux.HandleFunc(routePattern, func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
@@ -389,6 +386,8 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 		// Also logging should be done in the errorHandler because the correct status code is set there.
 		r.errorHandler(ctx, err)
 	})
+
+	return newRoute
 }
 
 // Common HTTP method handlers

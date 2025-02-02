@@ -368,10 +368,14 @@ func TestRouterMiddleware(t *testing.T) {
 	}
 }
 
+type XTestKey string
+
+const xTestCtxKey XTestKey = "X-Test"
+
 func TestWrapMiddleware(t *testing.T) {
 	httpMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			*r = *r.WithContext(context.WithValue(r.Context(), "X-Test", "test"))
+			*r = *r.WithContext(context.WithValue(r.Context(), xTestCtxKey, "test"))
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -380,7 +384,7 @@ func TestWrapMiddleware(t *testing.T) {
 	r.Use(r.WrapMiddleware(httpMiddleware))
 
 	r.GET("/wrap", func(c *rex.Context) error {
-		return c.String(c.Request.Context().Value("X-Test").(string))
+		return c.String(c.Request.Context().Value(xTestCtxKey).(string))
 	})
 
 	w := httptest.NewRecorder()
