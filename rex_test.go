@@ -480,15 +480,7 @@ func TestRouterChainMiddleware(t *testing.T) {
 		}
 	})
 
-	r.GET("/chain", func(c *rex.Context) error {
-		message, ok := c.Get(msgKey)
-		if !ok {
-			c.WriteHeader(http.StatusInternalServerError)
-			return c.String("no message")
-		}
-
-		return c.String(message.(string))
-	}, func(next rex.HandlerFunc) rex.HandlerFunc {
+	r.With(func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
 			message, ok := c.Get(msgKey)
 			if !ok {
@@ -499,6 +491,14 @@ func TestRouterChainMiddleware(t *testing.T) {
 			c.Set(msgKey, message.(string)+" third")
 			return next(c)
 		}
+	}).GET("/chain", func(c *rex.Context) error {
+		message, ok := c.Get(msgKey)
+		if !ok {
+			c.WriteHeader(http.StatusInternalServerError)
+			return c.String("no message")
+		}
+
+		return c.String(message.(string))
 	})
 
 	w := httptest.NewRecorder()

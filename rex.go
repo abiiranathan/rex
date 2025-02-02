@@ -391,44 +391,44 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 }
 
 // Common HTTP method handlers
-func (r *Router) GET(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodGet, pattern, handler, false, middlewares...)
+func (r *Router) GET(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodGet, pattern, handler, false)
 }
 
-func (r *Router) POST(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodPost, pattern, handler, false, middlewares...)
+func (r *Router) POST(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodPost, pattern, handler, false)
 }
 
-func (r *Router) PUT(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodPut, pattern, handler, false, middlewares...)
+func (r *Router) PUT(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodPut, pattern, handler, false)
 }
 
-func (r *Router) PATCH(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodPatch, pattern, handler, false, middlewares...)
+func (r *Router) PATCH(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodPatch, pattern, handler, false)
 }
 
-func (r *Router) DELETE(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodDelete, pattern, handler, false, middlewares...)
+func (r *Router) DELETE(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodDelete, pattern, handler, false)
 }
 
 // OPTIONS. This may not be necessary as registering GET request automatically registers OPTIONS.
-func (r *Router) OPTIONS(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodOptions, pattern, handler, false, middlewares...)
+func (r *Router) OPTIONS(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodOptions, pattern, handler, false)
 }
 
 // HEAD request.
-func (r *Router) HEAD(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodHead, pattern, handler, false, middlewares...)
+func (r *Router) HEAD(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodHead, pattern, handler, false)
 }
 
 // TRACE http request.
-func (r *Router) TRACE(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodTrace, pattern, handler, false, middlewares...)
+func (r *Router) TRACE(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodTrace, pattern, handler, false)
 }
 
 // CONNECT http request.
-func (r *Router) CONNECT(pattern string, handler HandlerFunc, middlewares ...Middleware) {
-	r.handle(http.MethodConnect, pattern, handler, false, middlewares...)
+func (r *Router) CONNECT(pattern string, handler HandlerFunc) {
+	r.handle(http.MethodConnect, pattern, handler, false)
 }
 
 // ServeHTTP implements the http.Handler interface
