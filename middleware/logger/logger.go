@@ -51,7 +51,7 @@ type Config struct {
 
 	// Callback is a function that can be used to modify the arguments passed to the logger.
 	// Forexample the request_id, user_id etc.
-	Callback func(r *http.Request, args ...any) []any
+	Callback func(c *rex.Context, args ...any) []any
 }
 
 // DefaultConfig is the default logger used by the Logger middleware.
@@ -134,7 +134,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 		}
 
 		if l.Callback != nil {
-			args = l.Callback(c.Request, args...)
+			args = l.Callback(c, args...)
 
 			if len(args)%2 != 0 {
 				panic("Callback must return an even number of arguments")

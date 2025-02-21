@@ -63,7 +63,7 @@ func TestVerifyToken(t *testing.T) {
 		t.Fatalf("expected error for expired token, got nil")
 	}
 
-	fmt.Println(err)
+	fmt.Println(err, claims)
 
 }
 
@@ -78,7 +78,7 @@ func TestJWTMiddleware(t *testing.T) {
 	}
 
 	router := rex.NewRouter()
-	router.Use(auth.JWT(secret))
+	router.Use(auth.JWT(secret, []string{}))
 
 	router.GET("/", func(c *rex.Context) error {
 		id := auth.GetPayload(c.Request)

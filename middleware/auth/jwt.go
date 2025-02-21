@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,9 +22,13 @@ const (
 )
 
 // JWT creates a JWT middleware with the given secret and options.
-func JWT(secret string) rex.Middleware {
+func JWT(secret string, skipPaths []string) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(ctx *rex.Context) error {
+			if slices.Contains(skipPaths, ctx.Path()) {
+				return next(ctx)
+			}
+
 			// Extract the JWT token from the request
 			tokenString := ctx.Request.Header.Get("Authorization")
 
