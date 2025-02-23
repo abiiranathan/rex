@@ -114,7 +114,7 @@ func (r *Router) ToHandler(h HandlerFunc) http.Handler {
 		defer r.PutContext(ctx)
 
 		err := h(ctx)
-		r.errorHandler(ctx, err)
+		r.errorHandlerFunc(ctx, err)
 	})
 }
 
@@ -153,10 +153,12 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 
 // Router is the main router structure
 type Router struct {
-	mux               *http.ServeMux        // http.ServeMux
-	routes            map[string]*route     // map of routes
-	globalMiddlewares []Middleware          // global middlewares
-	errorHandler      func(*Context, error) // centralized error handler
+	mux               *http.ServeMux    // http.ServeMux
+	routes            map[string]*route // map of routes
+	globalMiddlewares []Middleware      // global middlewares
+
+	errorHandlerFunc func(*Context, error) // centralized error handler
+	errHandler       ErrorHandler          // Interface satisfying ErrorHandler, called inside errorHandlerFunc
 
 	// Configuration for templates
 	viewsFs            fs.FS              // Views embed.FS(Alternative to views if set)
@@ -203,36 +205,6 @@ func (c *Context) GetLogger() *slog.Logger {
 	return c.router.logger
 }
 
-// defaultErrorHandler is the default error handler for the router.
-// It handles errors centrally and logs and writes the error to the response.
-// The logger can be replaced with a custom logger using WithLogger option.
-// It also handles validation errors and form errors.
-// The default error handler can be replaced with a custom error handler using SetErrorHandler.
-func defaultErrorHandler(ctx *Context, err error) {
-	defer func() {
-		// Log the error on exit to ensure that the correct status code is set.
-		ctx.router.logger.Debug("ERROR", "error", err, "status", ctx.Response.(*ResponseWriter).Status(), "path", ctx.Request.URL.Path)
-	}()
-
-	// We must return early if there is no error.
-	if err == nil {
-		return
-	}
-
-	if ve, ok := err.(validator.ValidationErrors); ok {
-		HandleValidationErrors(ctx, ve)
-		return
-	}
-
-	if fe, ok := err.(FormError); ok {
-		HandleFormErrors(ctx, fe)
-		return
-	}
-
-	ctx.WriteHeader(http.StatusInternalServerError)
-	ctx.Write([]byte(err.Error()))
-}
-
 // NewRouter creates a new router with the given options.
 // The router wraps the http.DefaultServeMux and adds routing and middleware
 // capabilities.
@@ -255,9 +227,36 @@ func NewRouter(options ...RouterOption) *Router {
 			AddSource: false,
 			Level:     slog.LevelError,
 		})),
+		// Global error handler functions
+		errHandler: defaultErrorHandler,
+		errorHandlerFunc: func(c *Context, err error) {
+			// Log the error on exit to ensure that the correct status code is set.
+			defer func() {
+				args := make([]any, 0, 6)
+				if err != nil {
+					args = append(args, "error", err.Error())
+				}
+				args = append(args, "status", c.Response.(*ResponseWriter).Status(), "path", c.Path())
+				c.router.logger.Debug("ERROR", args...)
+			}()
 
-		// Global error handler function.
-		errorHandler: defaultErrorHandler,
+			// We must return early if there is no error.
+			if err == nil {
+				return
+			}
+
+			if ve, ok := err.(validator.ValidationErrors); ok {
+				c.router.errHandler.ValidationErrors(c, c.TranslateErrors(ve))
+				return
+			}
+
+			if fe, ok := err.(FormError); ok {
+				c.router.errHandler.FormErrors(c, fe)
+				return
+			}
+
+			c.router.errHandler.GenericErrors(c, err)
+		},
 	}
 
 	// Create translator
@@ -291,11 +290,10 @@ func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) {
 }
 
 // Set error handler for centralized error handling.
-// This is called at the end of the request cycle to handle any errors that occur.
-// Be aware that the error handler is called even if the handler returns no error, so
-// you need to check if the error is nil before handling it.
-func (r *Router) SetErrorHandler(handler func(*Context, error)) {
-	r.errorHandler = handler
+func (r *Router) SetErrorHandler(handler ErrorHandler) {
+	if handler != nil {
+		r.errHandler = handler
+	}
 }
 
 // Global middleware
@@ -388,7 +386,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 			allowed := method == http.MethodGet && req.Method == http.MethodHead
 			if !allowed {
 				ctx.WriteHeader(http.StatusMethodNotAllowed)
-				r.errorHandler(ctx, fmt.Errorf("method not allowed"))
+				r.errorHandlerFunc(ctx, fmt.Errorf("method not allowed"))
 				return
 			}
 
@@ -411,7 +409,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 		// This allows the errorHandler to handle errors that are not returned by the handler.
 		// e.g. errors that occur in the middleware.
 		// Also logging should be done in the errorHandler because the correct status code is set there.
-		r.errorHandler(ctx, err)
+		r.errorHandlerFunc(ctx, err)
 	})
 
 	return newRoute

@@ -1,27 +1,39 @@
 package rex
 
 import (
-	"log"
 	"net/http"
 	"strings"
-
-	"github.com/go-playground/validator/v10"
 )
 
-func HandleValidationErrors(c *Context, errs validator.ValidationErrors) {
-	log.Println("handling validation errors")
+// Interface that allows for rex to call user-defined functions with errors
+// returns from handlers.
+type ErrorHandler interface {
+	// Passes translated validation errors in map[string]string.
+	// The keys are field names. Values are the error messages.
+	ValidationErrors(c *Context, errs map[string]string)
 
-	accept := strings.Split(c.Request.Header.Get("Accept"), ";")[0]
+	// Passes FormError as a result of calling c.BodyParser() when parsing the form.
+	FormErrors(c *Context, err FormError)
+
+	// Generic errors that are not ValidationErrors or FormErrors are passed here
+	// to the caller.
+	GenericErrors(c *Context, err error)
+}
+
+type errorHandler struct{}
+
+func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
+	accept := c.AcceptHeader()
 	c.WriteHeader(http.StatusBadRequest)
 
 	switch accept {
 	case "application/json":
-		c.JSON(errs.Translate(c.router.translator))
+		c.JSON(errs)
 	default:
 		{
 			var htmlReply strings.Builder
 			htmlReply.WriteString(`<div class="rex_error">`)
-			for _, value := range errs.Translate(c.router.translator) {
+			for _, value := range errs {
 				htmlReply.WriteString(`<p class="rex_error_item">`)
 				htmlReply.WriteString(value)
 				htmlReply.WriteString("</p>")
@@ -32,9 +44,8 @@ func HandleValidationErrors(c *Context, errs validator.ValidationErrors) {
 	}
 }
 
-func HandleFormErrors(c *Context, err FormError) {
-	log.Println("handling form errors")
-	accept := strings.Split(c.Request.Header.Get("Accept"), ";")[0]
+func (*errorHandler) FormErrors(c *Context, err FormError) {
+	accept := c.AcceptHeader()
 	c.WriteHeader(http.StatusBadRequest)
 
 	switch accept {
@@ -52,3 +63,17 @@ func HandleFormErrors(c *Context, err FormError) {
 		}
 	}
 }
+
+func (*errorHandler) GenericErrors(ctx *Context, err error) {
+	// Render error template if defined.
+	if ctx.router.errorTemplate != "" {
+		ctx.RenderError(ctx.Response, err, http.StatusInternalServerError)
+	} else {
+		// Send raw string of the error
+		ctx.WriteHeader(http.StatusInternalServerError)
+		ctx.Write([]byte(err.Error()))
+	}
+}
+
+// Default ErrorHandler for errors returned from handlers.
+var defaultErrorHandler ErrorHandler = &errorHandler{}

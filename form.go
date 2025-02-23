@@ -68,14 +68,14 @@ func (e FormError) Error() string {
 // MarshalJSON marshals the error to JSON.
 func (e FormError) MarshalJSON() ([]byte, error) {
 	if wrappedError, ok := e.Err.(FormError); ok {
-		return json.Marshal(map[string]interface{}{
+		return json.Marshal(map[string]any{
 			"err":   wrappedError.Err.Error(),
 			"kind":  wrappedError.Kind,
 			"field": wrappedError.Field,
 		})
 	}
 
-	return json.Marshal(map[string]interface{}{
+	return json.Marshal(map[string]any{
 		"err":   e.Err.Error(),
 		"kind":  e.Kind,
 		"field": e.Field,
@@ -96,7 +96,7 @@ var DefaultTimezone = time.UTC
 // Struct tags are used to specify the form field name.
 // If parsing forms, the default tag name is "form",
 // followed by the "json" tag name, and then snake case of the field name.
-func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
+func (c *Context) BodyParser(v any, loc ...*time.Location) error {
 	r := c.Request
 	// Make sure v is a pointer to a struct
 	rv := reflect.ValueOf(v)
@@ -155,7 +155,7 @@ func (c *Context) BodyParser(v interface{}, loc ...*time.Location) error {
 			}
 		}
 
-		data := make(map[string]interface{})
+		data := make(map[string]any)
 
 		for k, v := range form.Value {
 			vLen := len(v)
@@ -240,7 +240,7 @@ func KebabCase(s string) string {
 // Parses the form data and stores the result in v.
 // Default tag name is "form". You can specify a different tag name using the tag argument.
 // Forexample "query" tag name will parse the form data using the "query" tag.
-func (c *Context) parseFormData(data map[string]interface{}, v interface{}, timezone *time.Location, tag ...string) error {
+func (c *Context) parseFormData(data map[string]any, v any, timezone *time.Location, tag ...string) error {
 	var tagName string = "form"
 	if len(tag) > 0 {
 		tagName = tag[0]
@@ -294,7 +294,7 @@ func (c *Context) parseFormData(data map[string]interface{}, v interface{}, time
 	return nil
 }
 
-func setField(name string, fieldVal reflect.Value, value interface{}, timezone ...*time.Location) error {
+func setField(name string, fieldVal reflect.Value, value any, timezone ...*time.Location) error {
 	if value == nil {
 		return nil
 	}
@@ -555,11 +555,11 @@ func handleSlice(name string, fieldVal reflect.Value, value any, timezone *time.
 // It is used to implement custom form scanning for types that are not supported by default.
 type FormScanner interface {
 	// FormScan scans the form value and stores the result in the receiver.
-	FormScan(value interface{}) error
+	FormScan(value any) error
 }
 
 // QueryParser parses the query string and stores the result in v.
-func (c *Context) QueryParser(v interface{}, tag ...string) error {
+func (c *Context) QueryParser(v any, tag ...string) error {
 	var tagName string = "query"
 	if len(tag) > 0 {
 		tagName = tag[0]
@@ -575,7 +575,7 @@ func (c *Context) QueryParser(v interface{}, tag ...string) error {
 	}
 
 	data := c.Request.URL.Query()
-	dataMap := make(map[string]interface{}, len(data))
+	dataMap := make(map[string]any, len(data))
 	for k, v := range data {
 		if len(v) == 1 {
 			dataMap[k] = v[0] // if there's only one value.
