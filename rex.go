@@ -73,27 +73,48 @@ type Middleware func(HandlerFunc) HandlerFunc
 // Generic type for response data
 type Map map[string]any
 
-// WrapHandler wraps an http.Handler to be used as a HandlerFunc while preserving router access
+// WrapHandler wraps an http.Handler to be used as a rex.HandlerFunc
 func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
 	return func(c *Context) error {
 		// copy over context values
 		for k, v := range c.locals {
 			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), k, v))
 		}
+
 		h.ServeHTTP(c.Response, c.Request)
-		return nil
+
+		// If an error was set in request context, return it
+		errValue := c.Request.Context().Value(contextErrorKey)
+		if err, isError := errValue.(error); isError {
+			return err
+		}
+		// Propagate context error if any
+		return c.err
 	}
 }
 
-// Convert HandlerFunc to http.Handler with router access
-func (r *Router) ToHTTPHandler(h HandlerFunc) http.Handler {
+// Key for errors set inside http handlers without access to the context.
+// Allows errors to be propagated via the request context.
+type contextError string
+
+// Key to store errors in context.
+var contextErrorKey = contextError("context_error_key")
+
+// SetError sets the error inside the request context
+// that is retrieved and passed down the rex.Context.
+// Useful for http handlers without access to rex.Context.
+func SetError(r *http.Request, err error) {
+	*r = *r.WithContext(context.WithValue(r.Context(), contextErrorKey, err))
+}
+
+// Convert rex.HandlerFunc to http.Handler.
+func (r *Router) ToHandler(h HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := r.InitContext(w, req)
 		defer r.PutContext(ctx)
 
-		if err := h(ctx); err != nil {
-			r.errorHandler(ctx, err)
-		}
+		err := h(ctx)
+		r.errorHandler(ctx, err)
 	})
 }
 
@@ -112,12 +133,20 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 				}()
 
 				c.Response = w
-				next(c)
+				c.err = next(c)
 			})
 
 			handler = middleware(handler)
 			handler.ServeHTTP(c.Response, c.Request)
-			return nil
+
+			// If an error was set in request context, return it
+			errValue := c.Request.Context().Value(contextErrorKey)
+			if err, isError := errValue.(error); isError {
+				return err
+			}
+
+			// Propagate context error if any
+			return c.err
 		}
 	}
 }
@@ -182,9 +211,7 @@ func (c *Context) GetLogger() *slog.Logger {
 func defaultErrorHandler(ctx *Context, err error) {
 	defer func() {
 		// Log the error on exit to ensure that the correct status code is set.
-		ctx.router.logger.Debug("ERROR", "error", err, "status",
-			ctx.Response.(*ResponseWriter).Status(),
-			"path", ctx.Request.URL.Path)
+		ctx.router.logger.Debug("ERROR", "error", err, "status", ctx.Response.(*ResponseWriter).Status(), "path", ctx.Request.URL.Path)
 	}()
 
 	// We must return early if there is no error.

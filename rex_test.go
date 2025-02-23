@@ -398,6 +398,38 @@ func TestWrapMiddleware(t *testing.T) {
 	if w.Body.String() != "test" {
 		t.Errorf("expected test, got %s", w.Body.String())
 	}
+}
+
+func TestWrapMiddlewarePropagatesError(t *testing.T) {
+	httpMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*r = *r.WithContext(context.WithValue(r.Context(), xTestCtxKey, "test"))
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	r := rex.NewRouter()
+	r.Use(r.WrapMiddleware(httpMiddleware))
+
+	var msg = "This error should be propagated"
+
+	r.GET("/", func(c *rex.Context) error {
+		c.SetStatus(http.StatusBadRequest)
+		return fmt.Errorf("%s", msg)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %v, got %v", http.StatusBadRequest, w.Result().StatusCode)
+	}
+
+	// test: was overwritten
+	if w.Body.String() != msg {
+		t.Fatalf("expected body: %s, got: %s", msg, w.Body.String())
+	}
 
 }
 

@@ -131,9 +131,8 @@ func main() {
 	// Routes below will require cookie auth.
 	// if login routes are defined below, we define a skipFunc and ignore them.
 	var secretKey = securecookie.GenerateRandomKey(64)
-	auth.Register(User{})
+	auth.InitializeCookieStore([][]byte{secretKey}, User{})
 	r.Use(auth.Cookie(auth.CookieConfig{
-		KeyPairs: [][]byte{secretKey},
 		Options: &sessions.Options{
 			MaxAge:   int((24 * time.Hour).Seconds()),
 			Secure:   false,
