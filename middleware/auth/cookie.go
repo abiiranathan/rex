@@ -16,8 +16,7 @@ import (
 )
 
 var store *sessions.CookieStore
-var initialized bool
-var ErrNotInitialized = errors.New("auth: Store not initialized")
+var ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
 
 const (
 	authKey     = "rex_authenticated"
@@ -26,19 +25,34 @@ const (
 )
 
 type CookieConfig struct {
-	// KeyPairs are the authentication and encryption key pairs.
-	// The first key is used for authentication and the second key(if provided) for encryption
-	KeyPairs [][]byte
-
 	// Cookie options.
 	// Default: HttpOnly=true, SameSite=Strict(always), MaxAge=24hrs, Domain=/,secure=false
 	Options *sessions.Options
 
 	// Skip authentication for certain requests
-	SkipAuth func(req *http.Request) bool
+	SkipAuth func(c *rex.Context) bool
 
 	// Called when authentication fails
 	ErrorHandler func(c *rex.Context) error
+}
+
+/*
+InitializeCookieStore initializes cookie store with the provided secret/encryption key pairs.
+Keys are defined in pairs to allow key rotation, but the common case is to
+set a single authentication key and optionally an encryption key.
+
+The first key in a pair is used for authentication and the second for encryption.
+The encryption key can be set to nil or omitted in the last pair,
+but the authentication key is required in all pairs.
+
+It is recommended to use an authentication key with 32 or 64 bytes.
+The encryption key, if set, must be either 16, 24, or 32 bytes to select AES-128, AES-192, or AES-256 modes.
+
+userType is the struct instance that is registered with the gob encoder.
+*/
+func InitializeCookieStore(keyPairs [][]byte, userType any) {
+	store = sessions.NewCookieStore(keyPairs...)
+	gob.Register(userType)
 }
 
 // Cookie creates a new authentication middleware with the given configuration.
@@ -48,19 +62,13 @@ type CookieConfig struct {
 // You MUST register the type of state you want to store in the session by calling
 // auth.Register or gob.Register before using this middleware.
 func Cookie(config CookieConfig) rex.Middleware {
-	if len(config.KeyPairs) == 0 {
-		panic("you must provide at least 1 key")
-	}
-
 	if config.ErrorHandler == nil {
 		panic("you must provide the error handler")
 	}
 
-	if !initialized {
-		panic("Uninitialized: call auth.Register with your state value")
+	if store == nil {
+		panic(ErrNotInitialized)
 	}
-
-	store = sessions.NewCookieStore(config.KeyPairs...)
 
 	// Set default options if not provided
 	if config.Options == nil {
@@ -88,7 +96,7 @@ func Cookie(config CookieConfig) rex.Middleware {
 
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			if config.SkipAuth != nil && config.SkipAuth(c.Request) {
+			if config.SkipAuth != nil && config.SkipAuth(c) {
 				return next(c)
 			}
 
@@ -102,17 +110,6 @@ func Cookie(config CookieConfig) rex.Middleware {
 			}
 			return next(c)
 		}
-	}
-}
-
-// Register registers this type with GOB encoding.
-// Otherwise you will get a panic trying to serialize your custom types.
-// See gob.Register.
-// Example usage: auth.Register(User{})
-func Register(value any) {
-	if !initialized {
-		gob.Register(value)
-		initialized = true
 	}
 }
 

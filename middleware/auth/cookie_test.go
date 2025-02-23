@@ -24,19 +24,18 @@ func errorCallback(c *rex.Context) error {
 	return c.WriteHeader(http.StatusUnauthorized)
 }
 
-func skipAuth(req *http.Request) bool {
-	return req.URL.Path == "/login"
+func skipAuth(c *rex.Context) bool {
+	return c.Path() == "/login"
 }
 
 func TestCookieMiddleware(t *testing.T) {
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
 
-	auth.Register(User{})
+	auth.InitializeCookieStore([][]byte{secretKey, encryptionKey}, User{})
 
 	router := rex.NewRouter()
 	router.Use(auth.Cookie(auth.CookieConfig{
-		KeyPairs: [][]byte{secretKey, encryptionKey},
 		Options: &sessions.Options{
 			MaxAge:   int((24 * time.Hour).Seconds()),
 			Secure:   false,
