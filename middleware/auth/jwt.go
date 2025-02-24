@@ -72,7 +72,7 @@ func CreateJWTToken(secret string, payload any, exp time.Duration) (string, erro
 // The token is verified using the HMAC256 algorithm.
 // The default claims are stored in the "payload" key and the expiry time in the "exp" key.
 func VerifyJWToken(secret, tokenString string) (jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		// Validate the signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
