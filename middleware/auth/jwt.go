@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -13,19 +12,23 @@ import (
 )
 
 type claimsType string
+type jwtSkipped string
 
 const (
-	jwtClaimsKey claimsType = "claims"
-	jwtPayload   string     = "payload"
-	expKey       string     = "exp"
-	tokenPrefix  string     = "Bearer "
+	jwtClaimsKey     claimsType = "claims"
+	jwtPayload       string     = "payload"
+	expKey           string     = "exp"
+	tokenPrefix      string     = "Bearer "
+	jwtAuthIsSkipped jwtSkipped = "jwt_auth_skipped"
 )
 
 // JWT creates a JWT middleware with the given secret and options.
-func JWT(secret string, skipPaths []string) rex.Middleware {
+// If skipFunc returns true, authentication is skipped.
+func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(ctx *rex.Context) error {
-			if slices.Contains(skipPaths, ctx.Path()) {
+			if skipFunc != nil && skipFunc(ctx) {
+				ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), jwtAuthIsSkipped, true))
 				return next(ctx)
 			}
 
@@ -96,4 +99,13 @@ func GetPayload(req *http.Request) any {
 		return nil
 	}
 	return claims[jwtPayload]
+}
+
+// Returns true if JWT authentication was skipped.
+func JWTAuthSkipped(r *http.Request) bool {
+	value := r.Context().Value(jwtAuthIsSkipped)
+	if skipped, ok := value.(bool); skipped && ok {
+		return true
+	}
+	return false
 }

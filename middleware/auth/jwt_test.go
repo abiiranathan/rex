@@ -78,7 +78,7 @@ func TestJWTMiddleware(t *testing.T) {
 	}
 
 	router := rex.NewRouter()
-	router.Use(auth.JWT(secret, []string{}))
+	router.Use(auth.JWT(secret, nil))
 
 	router.GET("/", func(c *rex.Context) error {
 		id := auth.GetPayload(c.Request)

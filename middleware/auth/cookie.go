@@ -6,6 +6,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/gob"
 	"net/http"
 	"time"
@@ -18,10 +19,13 @@ import (
 var store *sessions.CookieStore
 var ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
 
+type cookieSkipped string
+
 const (
-	authKey     = "rex_authenticated"
-	stateKey    = "rex_auth_state"
-	sessionName = "rex_auth_session"
+	authKey             = "rex_authenticated"
+	stateKey            = "rex_auth_state"
+	sessionName         = "rex_auth_session"
+	cookieAuthIsSkipped = cookieSkipped("cookie_auth_skipped")
 )
 
 type CookieConfig struct {
@@ -97,6 +101,7 @@ func Cookie(config CookieConfig) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
 			if config.SkipAuth != nil && config.SkipAuth(c) {
+				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), cookieAuthIsSkipped, true))
 				return next(c)
 			}
 
@@ -165,4 +170,13 @@ func ClearAuthState(c *rex.Context) error {
 	http.SetCookie(c.Response, cookie)
 
 	return session.Save(c.Request, c.Response)
+}
+
+// Returns true if JWT authentication was skipped.
+func CookieAuthSkipped(r *http.Request) bool {
+	value := r.Context().Value(cookieAuthIsSkipped)
+	if skipped, ok := value.(bool); skipped && ok {
+		return true
+	}
+	return false
 }
