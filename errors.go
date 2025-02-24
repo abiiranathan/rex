@@ -65,14 +65,27 @@ func (*errorHandler) FormErrors(c *Context, err FormError) {
 }
 
 func (*errorHandler) GenericErrors(ctx *Context, err error) {
-	// Render error template if defined.
-	if ctx.router.errorTemplate != "" {
-		ctx.RenderError(ctx.Response, err, http.StatusInternalServerError)
-	} else {
-		// Send raw string of the error
-		ctx.WriteHeader(http.StatusInternalServerError)
-		ctx.Write([]byte(err.Error()))
+	statusCode := ctx.StatusCode()
+	if statusCode <= http.StatusBadRequest {
+		statusCode = http.StatusInternalServerError
 	}
+
+	accept := ctx.AcceptHeader()
+	switch accept {
+	case ContentTypeHTML:
+		// Render error template if defined.
+		if ctx.router.errorTemplate != "" {
+			ctx.RenderError(ctx.Response, err, statusCode)
+		} else {
+			// Send raw string of the error
+			ctx.WriteHeader(statusCode)
+			ctx.Write([]byte(err.Error()))
+		}
+	case ContentTypeJSON:
+		ctx.WriteHeader(statusCode)
+		ctx.JSON(Map{"error": err.Error()})
+	}
+
 }
 
 // Default ErrorHandler for errors returned from handlers.

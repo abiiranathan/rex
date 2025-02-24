@@ -118,7 +118,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 			logger = slog.New(slog.NewTextHandler(l.Output, l.Options))
 		}
 
-		args := []any{"status", c.Status()}
+		args := []any{"status", c.StatusCode()}
 		if l.Flags&LOG_LATENCY != 0 {
 			args = append(args, "latency", latency)
 		}

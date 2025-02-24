@@ -52,21 +52,22 @@ func (c *Context) GetHeader(key string) string {
 	return c.Request.Header.Get(key)
 }
 
-// SetStatus sets the status code of the response
-func (c *Context) SetStatus(status int) error {
+// Status sets the status code of the response and returns the context
+// allowing for chaining.
+func (c *Context) Status(status int) *Context {
 	c.Response.WriteHeader(status)
-	return nil
+	return c
 }
 
 // Context helper methods
 // JSON sends a JSON response
-func (c *Context) JSON(data interface{}) error {
+func (c *Context) JSON(data any) error {
 	c.Response.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(c.Response).Encode(data)
 }
 
 // XML sends an XML response
-func (c *Context) XML(data interface{}) error {
+func (c *Context) XML(data any) error {
 	c.Response.Header().Set("Content-Type", "application/xml")
 	return xml.NewEncoder(c.Response).Encode(data)
 }
@@ -240,7 +241,7 @@ func (c *Context) QueryUInt(key string, defaults ...uint) uint {
 }
 
 // Set stores a value in the context
-func (c *Context) Set(key interface{}, value interface{}) {
+func (c *Context) Set(key any, value any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.locals[key] = value
@@ -252,7 +253,7 @@ func (c *Context) Set(key interface{}, value interface{}) {
 }
 
 // Get retrieves a value from the context
-func (c *Context) Get(key interface{}) (value interface{}, exists bool) {
+func (c *Context) Get(key any) (value any, exists bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	value, exists = c.locals[key]
@@ -260,7 +261,7 @@ func (c *Context) Get(key interface{}) (value interface{}, exists bool) {
 }
 
 // MustGet retrieves a value from the context or panics if the key does not exist.
-func (c *Context) MustGet(key interface{}) interface{} {
+func (c *Context) MustGet(key any) any {
 	value, exists := c.Get(key)
 	if !exists {
 		panic("key not found")
@@ -270,7 +271,7 @@ func (c *Context) MustGet(key interface{}) interface{} {
 
 // GetOrEmpty retrieves a value from the context or returns nil if the key does not exist.
 // This better when you want to type-cast the value to a specific type without checking for existence.
-func (c *Context) GetOrEmpty(key interface{}) any {
+func (c *Context) GetOrEmpty(key any) any {
 	value, exists := c.Get(key)
 	if !exists {
 		return nil
@@ -418,7 +419,7 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 }
 
 // Returns the status code of the response.
-func (c *Context) Status() int {
+func (c *Context) StatusCode() int {
 	if wrapped, ok := c.Response.(*ResponseWriter); ok {
 		return wrapped.status
 	} else {

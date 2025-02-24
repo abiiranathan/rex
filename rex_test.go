@@ -414,7 +414,7 @@ func TestWrapMiddlewarePropagatesError(t *testing.T) {
 	var msg = "This error should be propagated"
 
 	r.GET("/", func(c *rex.Context) error {
-		c.SetStatus(http.StatusBadRequest)
+		c.Status(http.StatusBadRequest)
 		return fmt.Errorf("%s", msg)
 	})
 
@@ -810,7 +810,7 @@ func TestRouterRedirectRoute(t *testing.T) {
 	})
 
 	r.GET("/redirect_route2", func(c *rex.Context) error {
-		status := c.Status()
+		status := c.StatusCode()
 		if status != http.StatusFound {
 			t.Errorf("expected status 302, got %d", status)
 		}

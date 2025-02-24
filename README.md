@@ -51,7 +51,7 @@ This example shows how to implement a custom type that satisfies the `FormScanne
 type Date time.Time // Date in format YYYY-MM-DD
 
 // FormScan implements the FormScanner interface.
-func (d *Date) FormScan(value interface{}) error {
+func (d *Date) FormScan(value any) error {
 	v, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("date value is not a string")
