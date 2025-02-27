@@ -32,7 +32,7 @@ func (g *Group) Use(middlewares ...Middleware) {
 func (g *Group) With(middlewares ...Middleware) *route {
 	return &route{
 		prefix:      g.prefix,
-		middlewares: middlewares,
+		middlewares: append(g.middlewares, middlewares...),
 		router:      g.router,
 	}
 }
