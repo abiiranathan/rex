@@ -24,43 +24,42 @@ type errorHandler struct{}
 
 func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
 	accept := c.AcceptHeader()
+	contentType := c.ContentType()
+
 	c.WriteHeader(http.StatusBadRequest)
 
-	switch accept {
-	case "application/json":
+	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
 		c.JSON(errs)
-	default:
-		{
-			var htmlReply strings.Builder
-			htmlReply.WriteString(`<div class="rex_error">`)
-			for _, value := range errs {
-				htmlReply.WriteString(`<p class="rex_error_item">`)
-				htmlReply.WriteString(value)
-				htmlReply.WriteString("</p>")
-			}
-			htmlReply.WriteString("</div>")
-			c.HTML(htmlReply.String())
+	} else {
+		var htmlReply strings.Builder
+		htmlReply.WriteString(`<div class="rex_error">`)
+		for _, value := range errs {
+			htmlReply.WriteString(`<p class="rex_error_item">`)
+			htmlReply.WriteString(value)
+			htmlReply.WriteString("</p>")
 		}
+		htmlReply.WriteString("</div>")
+		c.HTML(htmlReply.String())
+
 	}
 }
 
 func (*errorHandler) FormErrors(c *Context, err FormError) {
 	accept := c.AcceptHeader()
+	contentType := c.ContentType()
+
 	c.WriteHeader(http.StatusBadRequest)
 
-	switch accept {
-	case "application/json":
+	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
 		c.JSON(err)
-	default:
-		{
-			var htmlReply strings.Builder
-			htmlReply.WriteString(`<div class="rex_error">`)
-			htmlReply.WriteString(`<p class="rex_error_item">`)
-			htmlReply.WriteString(err.Err.Error())
-			htmlReply.WriteString("</p>")
-			htmlReply.WriteString("</div>")
-			c.HTML(htmlReply.String())
-		}
+	} else {
+		var htmlReply strings.Builder
+		htmlReply.WriteString(`<div class="rex_error">`)
+		htmlReply.WriteString(`<p class="rex_error_item">`)
+		htmlReply.WriteString(err.Err.Error())
+		htmlReply.WriteString("</p>")
+		htmlReply.WriteString("</div>")
+		c.HTML(htmlReply.String())
 	}
 }
 
@@ -71,8 +70,12 @@ func (*errorHandler) GenericErrors(ctx *Context, err error) {
 	}
 
 	accept := ctx.AcceptHeader()
-	switch accept {
-	case ContentTypeHTML:
+	contentType := ctx.ContentType()
+
+	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
+		ctx.WriteHeader(statusCode)
+		ctx.JSON(Map{"error": err.Error()})
+	} else {
 		// Render error template if defined.
 		if ctx.router.errorTemplate != "" {
 			ctx.RenderError(ctx.Response, err, statusCode)
@@ -81,11 +84,7 @@ func (*errorHandler) GenericErrors(ctx *Context, err error) {
 			ctx.WriteHeader(statusCode)
 			ctx.Write([]byte(err.Error()))
 		}
-	case ContentTypeJSON:
-		ctx.WriteHeader(statusCode)
-		ctx.JSON(Map{"error": err.Error()})
 	}
-
 }
 
 // Default ErrorHandler for errors returned from handlers.
