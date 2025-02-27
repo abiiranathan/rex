@@ -743,6 +743,6 @@ func (r *Router) RegisteredRoutes() []RouteInfo {
 	return routes
 }
 
-func getFuncName(f interface{}) string {
+func getFuncName(f any) string {
 	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 }

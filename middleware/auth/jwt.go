@@ -15,9 +15,7 @@ type claimsType string
 type jwtSkipped string
 
 const (
-	jwtClaimsKey     claimsType = "claims"
-	jwtPayload       string     = "payload"
-	expKey           string     = "exp"
+	jwtClaimsKey     claimsType = "jwt_laims_key"
 	tokenPrefix      string     = "Bearer "
 	jwtAuthIsSkipped jwtSkipped = "jwt_auth_skipped"
 )
@@ -26,14 +24,14 @@ const (
 // If skipFunc returns true, authentication is skipped.
 func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
-		return func(ctx *rex.Context) error {
-			if skipFunc != nil && skipFunc(ctx) {
-				ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), jwtAuthIsSkipped, true))
-				return next(ctx)
+		return func(c *rex.Context) error {
+			if skipFunc != nil && skipFunc(c) {
+				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), jwtAuthIsSkipped, true))
+				return next(c)
 			}
 
 			// Extract the JWT token from the request
-			tokenString := ctx.Request.Header.Get("Authorization")
+			tokenString := c.Request.Header.Get("Authorization")
 
 			// Remove the "Bearer " prefix
 			tokenString = strings.TrimPrefix(tokenString, tokenPrefix)
@@ -42,28 +40,30 @@ func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 			tokenString = strings.TrimSpace(tokenString)
 
 			if tokenString == "" {
-				return ctx.WriteHeader(http.StatusUnauthorized)
+				return c.WriteHeader(http.StatusUnauthorized)
 			}
 
 			// Verify the token
 			claims, err := VerifyJWToken(secret, tokenString)
 			if err != nil {
-				return ctx.WriteHeader(http.StatusUnauthorized)
+				return c.WriteHeader(http.StatusUnauthorized)
 			}
 
-			ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), jwtClaimsKey, claims))
-			return next(ctx)
+			// Set the claims in the context
+			ctx := c.Request.Context()
+			c.Request = c.Request.WithContext(context.WithValue(ctx, jwtClaimsKey, claims))
+			return next(c)
 		}
 	}
 }
 
 // CreateToken creates a new JWT token with the given payload and expiry duration.
-// JWT is signed with the given secret key using the HMAC256 alegorithm.
+// JWT is signed with the given secret key using the HMAC256 algorithm.
 func CreateJWTToken(secret string, payload any, exp time.Duration) (string, error) {
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
-	claims[jwtPayload] = payload
-	claims[expKey] = time.Now().Add(exp).Unix()
+	claims["payload"] = payload
+	claims["exp"] = time.Now().Add(exp).Unix()
 	return token.SignedString([]byte(secret))
 }
 
@@ -93,12 +93,11 @@ func VerifyJWToken(secret, tokenString string) (jwt.MapClaims, error) {
 
 // Returns the payload from the request or nil if non-exists.
 // Should be called inside the handler when JWT verification is complete.
-func GetPayload(req *http.Request) any {
-	claims, ok := req.Context().Value(jwtClaimsKey).(jwt.MapClaims)
-	if !ok {
-		return nil
+func JwtClaims(req *http.Request) (jwt.MapClaims, error) {
+	if claims, ok := req.Context().Value(jwtClaimsKey).(jwt.MapClaims); ok {
+		return claims, nil
 	}
-	return claims[jwtPayload]
+	return nil, fmt.Errorf("invalid JWT claims")
 }
 
 // Returns true if JWT authentication was skipped.

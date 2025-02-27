@@ -81,10 +81,14 @@ func TestJWTMiddleware(t *testing.T) {
 	router.Use(auth.JWT(secret, nil))
 
 	router.GET("/", func(c *rex.Context) error {
-		id := auth.GetPayload(c.Request)
+		claims, err := auth.JwtClaims(c.Request)
+		if err != nil {
+			t.Fatalf("%s", err.Error())
+		}
 
+		id := claims["payload"]
 		if id != payload {
-			t.Errorf("expected payload to equal %s, got %s", payload, id)
+			t.Errorf("expected payload to equal %s, got %v", payload, id)
 		}
 
 		return c.String("Hello")

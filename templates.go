@@ -106,7 +106,7 @@ func (c *Context) RenderError(w http.ResponseWriter, err error, status ...int) e
 
 // builderPool is a pool of strings.Builder to avoid allocations.
 var builderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(strings.Builder)
 	},
 }

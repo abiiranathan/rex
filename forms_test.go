@@ -19,7 +19,7 @@ type CustomStruct struct {
 	Field2 int
 }
 
-func (c *CustomStruct) FormScan(value interface{}) error {
+func (c *CustomStruct) FormScan(value any) error {
 	v, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("value is not a string")
@@ -31,7 +31,7 @@ func (c *CustomStruct) FormScan(value interface{}) error {
 // Date in format YYYY-MM-DD
 type Date time.Time
 
-func (d *Date) FormScan(value interface{}) error {
+func (d *Date) FormScan(value any) error {
 	v, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("value is not a string")
@@ -47,9 +47,9 @@ func (d *Date) FormScan(value interface{}) error {
 type customInt int // Kind is int
 
 // Custom JSON type
-type JSON map[string]interface{}
+type JSON map[string]any
 
-func (j *JSON) FormScan(value interface{}) error {
+func (j *JSON) FormScan(value any) error {
 	v, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("value is not a string")
@@ -62,8 +62,8 @@ func TestSetField(t *testing.T) {
 	tests := []struct {
 		name      string
 		fieldType reflect.Kind
-		value     interface{}
-		expected  interface{}
+		value     any
+		expected  any
 	}{
 
 		{"String", reflect.String, "test", "test"},
@@ -127,8 +127,8 @@ func TestHandleSlice(t *testing.T) {
 	tests := []struct {
 		name       string
 		fieldvalue reflect.Value
-		value      interface{}
-		expected   interface{}
+		value      any
+		expected   any
 	}{
 		{"String", reflect.ValueOf(new([]string)).Elem(), "1, 2, 3", []string{"1", "2", "3"}},
 		{"Int", reflect.ValueOf(new([]int)).Elem(), "1, 2, 3", []int{1, 2, 3}},
@@ -198,9 +198,9 @@ func TestSetFieldsPointer(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		fieldPtr interface{}
-		value    interface{}
-		expected interface{}
+		fieldPtr any
+		value    any
+		expected any
 	}{
 		{"String", str, "test", "test"},
 		{"Int", i, "123", 123},
