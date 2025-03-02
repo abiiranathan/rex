@@ -70,10 +70,11 @@ func TestCookieMiddleware(t *testing.T) {
 	})
 
 	router.GET("/", func(c *rex.Context) error {
-		state, authenticated := auth.GetAuthState(c)
-		if !authenticated {
+		state := auth.CookieValue(c)
+		if state == nil {
 			t.Fatal("user is not authenticated")
 		}
+
 		res := fmt.Sprintf("Welcome home: %s", state.(User).Username)
 		return c.String(res)
 	})

@@ -20,12 +20,15 @@ var store *sessions.CookieStore
 var ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
 
 type cookieSkipped string
+type cookieSession string
+
+const cookieAuthIsSkipped = cookieSkipped("cookie_auth_skipped")
+const sessionKey = cookieSession("cookie_session_key")
 
 const (
-	authKey             = "rex_authenticated"
-	stateKey            = "rex_auth_state"
-	sessionName         = "rex_auth_session"
-	cookieAuthIsSkipped = cookieSkipped("cookie_auth_skipped")
+	authKey     = "rex_authenticated"
+	stateKey    = "rex_auth_state"
+	sessionName = "rex_auth_session"
 )
 
 type CookieConfig struct {
@@ -65,6 +68,7 @@ func InitializeCookieStore(keyPairs [][]byte, userType any) {
 //
 // You MUST register the type of state you want to store in the session by calling
 // auth.Register or gob.Register before using this middleware.
+// Access the session with c.Get(auth.SessionKey). It will be nil if not logged in.
 func Cookie(config CookieConfig) rex.Middleware {
 	if config.ErrorHandler == nil {
 		panic("you must provide the error handler")
@@ -113,6 +117,8 @@ func Cookie(config CookieConfig) rex.Middleware {
 			if session.Values[authKey] != true {
 				return config.ErrorHandler(c)
 			}
+
+			c.Set(sessionKey, session.Values[stateKey])
 			return next(c)
 		}
 	}
@@ -125,25 +131,20 @@ func SetAuthState(c *rex.Context, state any) error {
 	if store == nil {
 		return ErrNotInitialized
 	}
-	session, _ := store.Get(c.Request, sessionName)
+
+	session, err := store.Get(c.Request, sessionName)
+	if err != nil {
+		return err
+	}
+
 	session.Values[authKey] = true
 	session.Values[stateKey] = state
 	return session.Save(c.Request, c.Response)
 }
 
-// GetAuthState returns the auth state for this request.
-func GetAuthState(c *rex.Context) (state any, authenticated bool) {
-	if store == nil {
-		return nil, false
-	}
-
-	session, _ := store.Get(c.Request, sessionName)
-	if session.IsNew {
-		return nil, false
-	}
-
-	state = session.Values[stateKey]
-	return state, state != nil && session.Values[authKey] == true
+// CookieValue returns the auth state for this request or nil if not logged in.
+func CookieValue(c *rex.Context) (state any) {
+	return c.GetOrEmpty(sessionKey)
 }
 
 // ClearAuthState deletes authentication state.

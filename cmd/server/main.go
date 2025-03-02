@@ -68,7 +68,7 @@ func ApiHandler(c *rex.Context) error {
 
 // Create a protected handler
 func protectedHandler(c *rex.Context) error {
-	state, _ := auth.GetAuthState(c)
+	state := auth.CookieValue(c)
 	user := state.(User)
 	res := fmt.Sprintf("Hello %s", user.Username)
 	return c.String(res)
@@ -80,7 +80,7 @@ func authErrorCallback(c *rex.Context) error {
 
 func renderLoginPage(c *rex.Context) error {
 	// if already logged in, redirect home
-	if _, authenticated := auth.GetAuthState(c); authenticated {
+	if v := auth.CookieValue(c); v != nil {
 		return c.Redirect("/")
 	}
 
