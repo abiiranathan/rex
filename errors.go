@@ -40,7 +40,6 @@ func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
 		}
 		htmlReply.WriteString("</div>")
 		c.HTML(htmlReply.String())
-
 	}
 }
 

@@ -184,6 +184,9 @@ type Router struct {
 
 	// Logger
 	logger *slog.Logger
+
+	// loggerCallback returns an even number of user arguments to be added to the slog.Logger arguments
+	loggerCallback func(c *Context) []any
 }
 
 // Router option a function option for configuring the router.
@@ -197,6 +200,14 @@ func WithLogger(logger *slog.Logger) RouterOption {
 
 	return func(r *Router) {
 		r.logger = logger
+	}
+}
+
+// WithLoggerCallback sets a callback function that should return an even number of
+// additional user args to be appended to slog.Log arguments.
+func WithLoggerCallback(callback func(c *Context) []any) RouterOption {
+	return func(r *Router) {
+		r.loggerCallback = callback
 	}
 }
 
@@ -232,11 +243,15 @@ func NewRouter(options ...RouterOption) *Router {
 		errorHandlerFunc: func(c *Context, err error) {
 			// Log the error on exit to ensure that the correct status code is set.
 			defer func() {
-				args := make([]any, 0, 6)
+				args := make([]any, 0, 10)
 				if err != nil {
 					args = append(args, "error", err.Error())
 				}
-				args = append(args, "status", c.Response.(*ResponseWriter).Status(), "path", c.Path())
+				args = append(args, "latency", c.Latency(), "status", c.StatusCode(), "path", c.Path())
+				if c.router.loggerCallback != nil {
+					userArgs := c.router.loggerCallback(c)
+					args = append(args, userArgs...)
+				}
 				c.router.logger.Debug("ERROR", args...)
 			}()
 
