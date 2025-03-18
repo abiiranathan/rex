@@ -247,7 +247,7 @@ func NewRouter(options ...RouterOption) *Router {
 				if err != nil {
 					args = append(args, "error", err.Error())
 				}
-				args = append(args, "latency", c.Latency(), "status", c.StatusCode(), "path", c.Path())
+				args = append(args, "latency", c.Latency().String(), "status", c.StatusCode(), "path", c.Path())
 				if c.router.loggerCallback != nil {
 					userArgs := c.router.loggerCallback(c)
 					args = append(args, userArgs...)
