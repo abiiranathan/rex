@@ -244,8 +244,7 @@ func NewRouter(options ...RouterOption) *Router {
 				return a
 			},
 		})),
-		// Global error handler functions
-		errHandler: defaultErrorHandler,
+		errHandler: defaultErrorHandler, // Global error handler functions
 		errorHandlerFunc: func(c *Context, err error) {
 			// Log the error on exit to ensure that the correct status code is set.
 			defer func() {

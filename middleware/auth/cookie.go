@@ -104,18 +104,21 @@ func Cookie(config CookieConfig) rex.Middleware {
 
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			if config.SkipAuth != nil && config.SkipAuth(c) {
-				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), cookieAuthIsSkipped, true))
-				return next(c)
+			handleError := func() error {
+				if config.SkipAuth != nil && config.SkipAuth(c) {
+					c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), cookieAuthIsSkipped, true))
+					return next(c)
+				}
+				return config.ErrorHandler(c)
 			}
 
 			session, err := store.Get(c.Request, sessionName)
 			if err != nil {
-				return config.ErrorHandler(c)
+				return handleError()
 			}
 
 			if session.Values[authKey] != true {
-				return config.ErrorHandler(c)
+				return handleError()
 			}
 
 			c.Set(sessionKey, session.Values[stateKey])
