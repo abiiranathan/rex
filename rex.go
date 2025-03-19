@@ -237,6 +237,12 @@ func NewRouter(options ...RouterOption) *Router {
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: false,
 			Level:     slog.LevelError,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == "msg" {
+					return slog.Attr{}
+				}
+				return a
+			},
 		})),
 		// Global error handler functions
 		errHandler: defaultErrorHandler,
@@ -247,12 +253,12 @@ func NewRouter(options ...RouterOption) *Router {
 				if err != nil {
 					args = append(args, "error", err.Error())
 				}
-				args = append(args, "latency", c.Latency().String(), "status", c.StatusCode(), "path", c.Path())
+				args = append(args, "latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path())
 				if c.router.loggerCallback != nil {
 					userArgs := c.router.loggerCallback(c)
 					args = append(args, userArgs...)
 				}
-				c.router.logger.Debug("ERROR", args...)
+				c.router.logger.Debug("", args...)
 			}()
 
 			// We must return early if there is no error.
