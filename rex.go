@@ -187,6 +187,9 @@ type Router struct {
 
 	// loggerCallback returns an even number of user arguments to be added to the slog.Logger arguments
 	loggerCallback func(c *Context) []any
+
+	// skipLog skips logging the request if it returns true
+	skipLog func(c *Context) bool
 }
 
 // Router option a function option for configuring the router.
@@ -208,6 +211,13 @@ func WithLogger(logger *slog.Logger) RouterOption {
 func WithLoggerCallback(callback func(c *Context) []any) RouterOption {
 	return func(r *Router) {
 		r.loggerCallback = callback
+	}
+}
+
+// Skip logging this request if skipLog returns true.
+func SkipLog(skipLog func(c *Context) bool) RouterOption {
+	return func(r *Router) {
+		r.skipLog = skipLog
 	}
 }
 
@@ -248,6 +258,12 @@ func NewRouter(options ...RouterOption) *Router {
 		errorHandlerFunc: func(c *Context, err error) {
 			// Log the error on exit to ensure that the correct status code is set.
 			defer func() {
+
+				// Skip logging if this returns true
+				if c.router.skipLog != nil && c.router.skipLog(c) {
+					return
+				}
+
 				args := make([]any, 0, 10)
 				if err != nil {
 					args = append(args, "error", err.Error())
