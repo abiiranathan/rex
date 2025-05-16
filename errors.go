@@ -22,24 +22,26 @@ type ErrorHandler interface {
 
 type errorHandler struct{}
 
+func writeHtmlError(c *Context, errs map[string]string) {
+	var htmlReply strings.Builder
+	htmlReply.WriteString(`<div class="rex_error">`)
+	for _, value := range errs {
+		htmlReply.WriteString(`<p class="rex_error_item">`)
+		htmlReply.WriteString(value)
+		htmlReply.WriteString("</p>")
+	}
+	htmlReply.WriteString("</div>")
+	c.HTML(htmlReply.String())
+}
+
 func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
 	accept := c.AcceptHeader()
 	contentType := c.ContentType()
-
 	c.WriteHeader(http.StatusBadRequest)
-
 	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
 		c.JSON(errs)
 	} else {
-		var htmlReply strings.Builder
-		htmlReply.WriteString(`<div class="rex_error">`)
-		for _, value := range errs {
-			htmlReply.WriteString(`<p class="rex_error_item">`)
-			htmlReply.WriteString(value)
-			htmlReply.WriteString("</p>")
-		}
-		htmlReply.WriteString("</div>")
-		c.HTML(htmlReply.String())
+		writeHtmlError(c, errs)
 	}
 }
 
@@ -75,13 +77,12 @@ func (*errorHandler) GenericErrors(ctx *Context, err error) {
 		ctx.WriteHeader(statusCode)
 		ctx.JSON(Map{"error": err.Error()})
 	} else {
-		// Render error template if defined.
-		if ctx.router.errorTemplate != "" {
-			ctx.RenderError(ctx.Response, err, statusCode)
-		} else {
-			// Send raw string of the error
+		isHtmx := ctx.Request.Header.Get("HX-Request") == "true"
+		if isHtmx || ctx.router.errorTemplate != "" {
 			ctx.WriteHeader(statusCode)
 			ctx.Write([]byte(err.Error()))
+		} else {
+			ctx.RenderError(ctx.Response, err, statusCode)
 		}
 	}
 }
