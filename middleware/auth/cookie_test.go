@@ -35,7 +35,7 @@ func TestCookieMiddleware(t *testing.T) {
 	auth.InitializeCookieStore([][]byte{secretKey, encryptionKey}, User{})
 
 	router := rex.NewRouter()
-	router.Use(auth.Cookie(auth.CookieConfig{
+	router.Use(auth.Cookie("rex_session_name", auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   int((24 * time.Hour).Seconds()),
 			Secure:   false,

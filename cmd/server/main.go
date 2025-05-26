@@ -132,7 +132,7 @@ func main() {
 	// if login routes are defined below, we define a skipFunc and ignore them.
 	var secretKey = securecookie.GenerateRandomKey(64)
 	auth.InitializeCookieStore([][]byte{secretKey}, User{})
-	r.Use(auth.Cookie(auth.CookieConfig{
+	r.Use(auth.Cookie("rex_session_name", auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   int((24 * time.Hour).Seconds()),
 			Secure:   false,

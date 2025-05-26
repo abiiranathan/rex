@@ -26,10 +26,12 @@ const cookieAuthIsSkipped = cookieSkipped("cookie_auth_skipped")
 const sessionKey = cookieSession("cookie_session_key")
 
 const (
-	authKey     = "rex_authenticated"
-	stateKey    = "rex_auth_state"
-	sessionName = "rex_auth_session"
+	authKey  = "rex_authenticated"
+	stateKey = "rex_auth_state"
 )
+
+// The cookie session name.
+var rexSessionName string
 
 type CookieConfig struct {
 	// Cookie options.
@@ -69,7 +71,11 @@ func InitializeCookieStore(keyPairs [][]byte, userType any) {
 // You MUST register the type of state you want to store in the session by calling
 // auth.Register or gob.Register before using this middleware.
 // Access the session with c.Get(auth.SessionKey). It will be nil if not logged in.
-func Cookie(config CookieConfig) rex.Middleware {
+func Cookie(sessionName string, config CookieConfig) rex.Middleware {
+	if sessionName == "" {
+		panic("config.SessionName is required")
+	}
+
 	if config.ErrorHandler == nil {
 		panic("you must provide the error handler")
 	}
@@ -77,6 +83,9 @@ func Cookie(config CookieConfig) rex.Middleware {
 	if store == nil {
 		panic(ErrNotInitialized)
 	}
+
+	// Update the global session name
+	rexSessionName = sessionName
 
 	// Set default options if not provided
 	if config.Options == nil {
@@ -135,7 +144,7 @@ func SetAuthState(c *rex.Context, state any) error {
 		return ErrNotInitialized
 	}
 
-	session, err := store.Get(c.Request, sessionName)
+	session, err := store.Get(c.Request, rexSessionName)
 	if err != nil {
 		return err
 	}
@@ -156,7 +165,7 @@ func ClearAuthState(c *rex.Context) error {
 		return ErrNotInitialized
 	}
 
-	session, _ := store.Get(c.Request, sessionName)
+	session, _ := store.Get(c.Request, rexSessionName)
 	if session.IsNew {
 		return nil
 	}
@@ -165,7 +174,7 @@ func ClearAuthState(c *rex.Context) error {
 		delete(session.Values, k)
 	}
 
-	cookie, err := c.Request.Cookie(sessionName)
+	cookie, err := c.Request.Cookie(rexSessionName)
 	if err != nil {
 		return nil
 	}
