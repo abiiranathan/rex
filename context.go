@@ -21,12 +21,13 @@ import (
 
 // Context represents the context of the current HTTP request
 type Context struct {
-	Request  *http.Request       // Original Request object
-	Response http.ResponseWriter // Wrapped Writer
-	router   *Router             // Instance of the Router.
-	locals   map[any]any         // Per-request context data
-	mu       sync.RWMutex        // Mutex for the locals map
-	err      error               // Tracks any error encountered in middleware
+	Request      *http.Request       // Original Request object
+	Response     http.ResponseWriter // Wrapped Writer
+	router       *Router             // Instance of the Router.
+	locals       map[any]any         // Per-request context data
+	mu           sync.RWMutex        // Mutex for the locals map
+	err          error               // Tracks any error encountered in middleware
+	currentRoute *route              // The current route.
 }
 
 // SetHeader sets a header in the response

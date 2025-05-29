@@ -148,6 +148,20 @@ func (c *Context) renderTemplate(name string, data Map) error {
 	return err
 }
 
+func validateMap(c *Context, m Map) error {
+	// We only care about /GET methods that render templates.
+	if c.Method() != http.MethodGet {
+		return nil
+	}
+
+	// If templateRegistry or m is nil, the validation is OFF.
+	if c.router.templateRegistry == nil || m == nil {
+		return nil
+	}
+
+	return c.router.templateRegistry.Validate(c.currentRoute.prefix, m)
+}
+
 // Render the template tmpl with the data. If no template is configured, Render will panic.
 // data is a map such that it can be extended with
 // the request context keys if passContextToViews is set to true.
@@ -163,6 +177,11 @@ func (c *Context) Render(name string, data Map) error {
 			data[fmt.Sprintf("%v", k)] = v
 		}
 	}
+
+	// Validate context
+	if err := validateMap(c, data); err != nil {
+		return err
+	}
 	return c.renderTemplate(name, data)
 }
 
@@ -177,6 +196,11 @@ func (c *Context) ExecuteTemplate(name string, data Map) error {
 		for k, v := range c.locals {
 			data[fmt.Sprintf("%v", k)] = v
 		}
+	}
+
+	// Validate context
+	if err := validateMap(c, data); err != nil {
+		return err
 	}
 	return c.router.template.ExecuteTemplate(c.Response, name, data)
 }

@@ -1,6 +1,6 @@
 module github.com/abiiranathan/rex
 
-go 1.22.0
+go 1.24.3
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/abiiranathan/templateval v0.1.0
 	github.com/andybalholm/brotli v1.1.1
 	github.com/go-playground/locales v0.14.1
 	github.com/go-playground/universal-translator v0.18.1

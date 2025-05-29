@@ -40,6 +40,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abiiranathan/templateval"
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
@@ -190,6 +191,9 @@ type Router struct {
 
 	// skipLog skips logging the request if it returns true
 	skipLog func(c *Context) bool
+
+	// Global template context validator
+	templateRegistry *templateval.TemplateRegistry
 }
 
 // Router option a function option for configuring the router.
@@ -244,21 +248,15 @@ func NewRouter(options ...RouterOption) *Router {
 		groups:             make(map[string]*Group),
 		globalMiddlewares:  []Middleware{},
 		validator:          validator.New(validator.WithRequiredStructEnabled()),
+		templateRegistry:   templateval.NewRegistry(),
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: false,
 			Level:     slog.LevelError,
-			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == "msg" {
-					return slog.Attr{}
-				}
-				return a
-			},
 		})),
 		errHandler: defaultErrorHandler, // Global error handler functions
 		errorHandlerFunc: func(c *Context, err error) {
 			// Log the error on exit to ensure that the correct status code is set.
 			defer func() {
-
 				// Skip logging if this returns true
 				if c.router.skipLog != nil && c.router.skipLog(c) {
 					return
@@ -325,6 +323,12 @@ func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) {
 	r.validator.RegisterValidationCtx(tag, fn, true)
 }
 
+// Set the template registry on the router.
+// If set to nil, all checks are turned off.
+func (r *Router) SetTemplateRegistry(registry *templateval.TemplateRegistry) {
+	r.templateRegistry = registry
+}
+
 // Set error handler for centralized error handling.
 func (r *Router) SetErrorHandler(handler ErrorHandler) {
 	if handler != nil {
@@ -374,6 +378,7 @@ func (c *Context) reset() {
 	c.Request = nil
 	c.Response = nil
 	c.router = nil
+	c.currentRoute = nil
 	c.locals = make(map[any]any)
 }
 
@@ -416,6 +421,9 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 		ctx := r.InitContext(w, req)
 		defer r.PutContext(ctx)
 
+		// Track the current route.
+		ctx.currentRoute = newRoute
+
 		var skipBody bool
 		if req.Method != method {
 			// Allow HEAD requests for GET routes as this is allowed by the new Go 1.22 router.
@@ -452,8 +460,13 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 }
 
 // Common HTTP method handlers
-func (r *Router) GET(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodGet, pattern, handler, false)
+func (r *Router) GET(pattern string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
+	regRoute := r.handle(http.MethodGet, pattern, handler, false)
+
+	// Register template map validator.
+	if r.templateRegistry != nil && len(validator) > 0 {
+		r.templateRegistry.Register(regRoute.prefix, validator[0])
+	}
 }
 
 func (r *Router) POST(pattern string, handler HandlerFunc) {
@@ -642,14 +655,13 @@ type minifiedFS struct {
 
 func (mfs *minifiedFS) Open(name string) (http.File, error) {
 	ext := filepath.Ext(name)
-
 	if slices.Contains(MinExtensions, ext) {
-		minifiedName := strings.TrimSuffix(name, filepath.Ext(name)) + ".min" + filepath.Ext(name)
+		minifiedName := fmt.Sprintf("%s.min%s", strings.TrimSuffix(name, ext), ext)
 		if f, err := mfs.FileSystem.Open(minifiedName); err == nil {
 			return f, nil
 		}
+		// Fallback to serving original file instead or error-ing.
 	}
-
 	// serve the original file
 	return mfs.FileSystem.Open(name)
 }
