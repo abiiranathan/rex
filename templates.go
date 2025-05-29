@@ -159,6 +159,11 @@ func validateMap(c *Context, m Map) error {
 		return nil
 	}
 
+	// If this path wasn't registered, we skip validation
+	if !c.router.templateRegistry.HasTemplate(c.currentRoute.prefix) {
+		return nil
+	}
+
 	return c.router.templateRegistry.Validate(c.currentRoute.prefix, m)
 }
 
