@@ -78,7 +78,7 @@ func (*errorHandler) GenericErrors(ctx *Context, err error) {
 		ctx.JSON(Map{"error": err.Error()})
 	} else {
 		isHtmx := ctx.Request.Header.Get("HX-Request") == "true"
-		if isHtmx || ctx.router.errorTemplate != "" {
+		if isHtmx || ctx.router.errorTemplate == "" {
 			ctx.WriteHeader(statusCode)
 			ctx.Write([]byte(err.Error()))
 		} else {
