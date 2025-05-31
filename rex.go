@@ -248,7 +248,7 @@ func NewRouter(options ...RouterOption) *Router {
 		groups:             make(map[string]*Group),
 		globalMiddlewares:  []Middleware{},
 		validator:          validator.New(validator.WithRequiredStructEnabled()),
-		templateRegistry:   templateval.NewRegistry(),
+		templateRegistry:   nil, // No validation be default
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: false,
 			Level:     slog.LevelError,

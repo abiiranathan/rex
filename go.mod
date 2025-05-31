@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/abiiranathan/templateval v0.1.2
+	github.com/abiiranathan/templateval v0.1.3
 	github.com/andybalholm/brotli v1.1.1
 	github.com/go-playground/locales v0.14.1
 	github.com/go-playground/universal-translator v0.18.1
