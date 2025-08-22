@@ -34,7 +34,7 @@ func main() {
 		rex.PassContextToViews(true),
 	)
 
-	mux.Use(recovery.New(true))
+	mux.Use(recovery.New(recovery.WithStackTrace(true)))
 	mux.Use(logger.New(logger.DefaultConfig))
 	// mux.Use(etag.New())
 	mux.Use(cors.New())
@@ -52,13 +52,9 @@ func main() {
 
 	mux.Use(csrf.New(store, false))
 	mux.StaticFS("/static", http.FS(static))
-	// mux.Static("/static/", "static")
 
 	mux.GET("/test/{id}/", func(c *rex.Context) error {
 		return c.Redirect("/redirect")
-
-		// id := r.PathValue("id")
-		// fmt.Fprintf(w, "Hello, you lucky number is %s!\n", id)
 	})
 
 	mux.GET("/redirect", func(c *rex.Context) error {
@@ -91,7 +87,10 @@ func main() {
 		rex.WithWriteTimeout(time.Second * 15),
 	}
 
-	server := rex.NewServer(":8000", mux, opts...)
+	server, err := rex.NewServer(":8000", mux, opts...)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	defer server.Shutdown()
 
 	log.Printf("Listening on %v\n", server.Addr)

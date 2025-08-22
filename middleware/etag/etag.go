@@ -88,8 +88,8 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 			// the Response is assumed to be rex.ResponseWriter
 			originalWriter := c.Response
 			c.Response = ew
-			defer func() { c.Response = originalWriter }()
 			err := next(c)
+			c.Response = originalWriter
 			// Return error after restoring the response writer
 			if err != nil {
 				return err
@@ -97,7 +97,7 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 
 			if ew.status != http.StatusOK {
 				// For non-200 responses, write the status and body without ETag
-				_ = c.WriteHeader(ew.status)
+				c.WriteHeader(ew.status)
 				_, err := ew.buf.WriteTo(c.Response)
 				return err
 			}
@@ -108,18 +108,20 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 			// Check If-None-Match and If-Match headers and return 304 or 412 if needed
 			ifNoneMatch := c.GetHeader("If-None-Match")
 			if ifNoneMatch == etag {
-				return c.WriteHeader(http.StatusNotModified)
+				c.WriteHeader(http.StatusNotModified)
+				return nil
 			}
 
 			// If-Match is not supported for GET requests
 			ifMatch := c.GetHeader("If-Match")
 			if ifMatch != "" && ifMatch != etag {
 				// If-Match header is present and doesn't match the ETag
-				return c.WriteHeader(http.StatusPreconditionFailed)
+				c.WriteHeader(http.StatusPreconditionFailed)
+				return nil
 			}
 
 			// Write the status and body for 200 OK responses
-			_ = c.WriteHeader(ew.status)
+			c.WriteHeader(ew.status)
 			_, err = ew.buf.WriteTo(c.Response)
 			return err
 		}

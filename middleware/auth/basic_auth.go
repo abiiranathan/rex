@@ -25,7 +25,8 @@ func BasicAuth(username, password string, realm ...string) rex.Middleware {
 				subtle.ConstantTimeCompare([]byte(pass), []byte(password)) != 1 {
 
 				ctx.Response.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, defaultRealm))
-				return ctx.WriteHeader(http.StatusUnauthorized)
+				ctx.WriteHeader(http.StatusUnauthorized)
+				return nil
 			}
 			return next(ctx)
 		}

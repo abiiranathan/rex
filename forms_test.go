@@ -864,8 +864,6 @@ func TestErrorHandlerFormErrors(t *testing.T) {
 		t.Errorf("BodyParser() status = %v, want %v", w.Code, http.StatusBadRequest)
 	}
 
-	fmt.Println("Body:", w.Body.String())
-
 	// random non-form error
 	req = httptest.NewRequest(http.MethodGet, "/error", strings.NewReader(formEncoded))
 	w = httptest.NewRecorder()

@@ -190,7 +190,7 @@ func TestRouterJSONData(t *testing.T) {
 	}
 
 	var u2 User
-	json.NewDecoder(w.Body).Decode(&u2)
+	_ = json.NewDecoder(w.Body).Decode(&u2)
 
 	if !reflect.DeepEqual(u, u2) {
 		t.Errorf("expected %v, got %v", u, u2)
@@ -230,7 +230,7 @@ func TestBodyParserDerivedTypes(t *testing.T) {
 	}
 
 	var u2 User
-	json.NewDecoder(w.Body).Decode(&u2)
+	_ = json.NewDecoder(w.Body).Decode(&u2)
 
 	if !reflect.DeepEqual(u, u2) {
 		t.Errorf("expected %v, got %v", u, u2)
@@ -252,9 +252,9 @@ func TestRouterMultipartFormData(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	writer.WriteField("name", "Abiira Nathan")
-	writer.WriteField("age", "23")
-	writer.Close()
+	_ = writer.WriteField("name", "Abiira Nathan")
+	_ = writer.WriteField("age", "23")
+	_ = writer.Close()
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/multipart", body)
@@ -275,7 +275,7 @@ func TestRouterMultipartFormData(t *testing.T) {
 func TestRouterMultipartFormDataWithFile(t *testing.T) {
 	r := rex.NewRouter()
 	r.POST("/upload", func(c *rex.Context) error {
-		c.Request.ParseMultipartForm(c.Request.ContentLength)
+		_ = c.Request.ParseMultipartForm(c.Request.ContentLength)
 		_, fileHeader, err := c.Request.FormFile("file")
 		if err != nil {
 			return c.String(err.Error())
@@ -311,7 +311,10 @@ func TestRouterMultipartFormDataWithFile(t *testing.T) {
 	}
 
 	// close writer before creating request
-	writer.Close()
+	err = writer.Close()
+	if err != nil {
+		t.Error(err)
+	}
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/upload", body)
@@ -1340,6 +1343,7 @@ func BenchmarkRequestsPerSecond(b *testing.B) {
 			// Make sure to read and close the body to reuse connections
 			_, err = io.ReadAll(res.Body)
 			res.Body.Close()
+
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -40,13 +40,15 @@ func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 			tokenString = strings.TrimSpace(tokenString)
 
 			if tokenString == "" {
-				return c.WriteHeader(http.StatusUnauthorized)
+				c.WriteHeader(http.StatusUnauthorized)
+				return nil
 			}
 
 			// Verify the token
 			claims, err := VerifyJWToken(secret, tokenString)
 			if err != nil {
-				return c.WriteHeader(http.StatusUnauthorized)
+				c.WriteHeader(http.StatusUnauthorized)
+				return nil
 			}
 
 			// Set the claims in the context

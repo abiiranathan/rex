@@ -299,8 +299,11 @@ func NewRouter(options ...RouterOption) *Router {
 	trans, _ := uni.GetTranslator("en")
 
 	// Connect ut to our validator
-	en_translations.RegisterDefaultTranslations(r.validator, trans)
-	r.translator = trans
+	if err := en_translations.RegisterDefaultTranslations(r.validator, trans); err == nil {
+		r.translator = trans
+	} else {
+		r.translator = nil
+	}
 
 	for _, option := range options {
 		option(r)
@@ -313,14 +316,14 @@ func NewRouter(options ...RouterOption) *Router {
 // NOTES: - if the key already exists, the previous validation function will be replaced.
 // - this method is not thread-safe it is intended that these all be registered prior
 // to any validation
-func (r *Router) RegisterValidation(tag string, fn validator.Func) {
-	r.validator.RegisterValidation(tag, fn, true)
+func (r *Router) RegisterValidation(tag string, fn validator.Func) error {
+	return r.validator.RegisterValidation(tag, fn, true)
 }
 
 // RegisterValidationCtx does the same as RegisterValidation on accepts a
 // FuncCtx validation allowing context.Context validation support.
-func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) {
-	r.validator.RegisterValidationCtx(tag, fn, true)
+func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) error {
+	return r.validator.RegisterValidationCtx(tag, fn, true)
 }
 
 // Set the template registry on the router.
@@ -643,7 +646,7 @@ func (r *Router) FaviconFS(fs http.FileSystem, path string) {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
 		w.Header().Set("Content-Disposition", "inline; filename=favicon.ico")
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 
 	r.GET("/favicon.ico", r.WrapHandler(handler))

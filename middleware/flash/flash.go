@@ -118,7 +118,10 @@ func FlashMessage(c *rex.Context, message string, messageType ...FlashMessageTyp
 	return nil
 }
 
-// FlashMessageMiddleware is a middleware that sets the flash message in the context
+// FlashMessageMiddleware is a middleware that sets the flash message in the context.
+// Flash messages are inserted into the context by calling FlashMessage function.
+// The context variables passed are "flash_message" (string)
+// and "flash_message_type" (string) [success,info,warning,danger]
 func FlashMessageMiddleware() rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {

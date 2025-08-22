@@ -22,7 +22,7 @@ type Server struct {
 type ServerOption func(*Server)
 
 // Create a new Server instance with HTTP/2 support.
-func NewServer(addr string, handler http.Handler, options ...ServerOption) *Server {
+func NewServer(addr string, handler http.Handler, options ...ServerOption) (*Server, error) {
 	server := &Server{
 		&http.Server{
 			Addr:         addr,
@@ -37,12 +37,14 @@ func NewServer(addr string, handler http.Handler, options ...ServerOption) *Serv
 	}
 
 	// Explicitly enable HTTP/2
-	http2.ConfigureServer(server.Server, &http2.Server{})
+	if err := http2.ConfigureServer(server.Server, &http2.Server{}); err != nil {
+		return nil, err
+	}
 
 	for _, option := range options {
 		option(server)
 	}
-	return server
+	return server, nil
 }
 
 // Gracefully shuts down the server. The default timeout is 5 seconds
@@ -58,6 +60,7 @@ func (s *Server) Shutdown(timeout ...time.Duration) {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit
+
 	ctx, cancel := context.WithTimeout(context.Background(), t)
 	defer cancel()
 
@@ -95,7 +98,9 @@ func WithTLSConfig(config *tls.Config) ServerOption {
 // New option to fine-tune HTTP/2 settings
 func WithHTTP2Options(http2ServerOptions http2.Server) ServerOption {
 	return func(s *Server) {
-		http2.ConfigureServer(s.Server, &http2ServerOptions)
+		if err := http2.ConfigureServer(s.Server, &http2ServerOptions); err != nil {
+			log.Println(err)
+		}
 	}
 }
 

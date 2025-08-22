@@ -25,12 +25,15 @@ import (
 type TestHandler struct{}
 
 func (h *TestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("ok"))
+	_, _ = w.Write([]byte("ok"))
 }
 
 func TestNewServer(t *testing.T) {
 	handler := &TestHandler{}
-	server := NewServer(":0", handler)
+	server, err := NewServer(":0", handler)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if server == nil {
 		t.Fatal("Expected server to not be nil")
@@ -128,14 +131,20 @@ func TestServerOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := NewServer(":0", &TestHandler{}, tt.option)
+			server, err := NewServer(":0", &TestHandler{}, tt.option)
+			if err != nil {
+				t.Fatal(err)
+			}
 			tt.validate(t, server)
 		})
 	}
 }
 
 func TestServerShutdown(t *testing.T) {
-	server := NewServer(":0", &TestHandler{})
+	server, err := NewServer(":0", &TestHandler{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Start server in goroutine
 	go func() {
@@ -150,7 +159,7 @@ func TestServerShutdown(t *testing.T) {
 	// Trigger shutdown
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+		_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
 	}()
 
 	server.Shutdown(2 * time.Second)

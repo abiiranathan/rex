@@ -17,6 +17,11 @@ type brotliWriter struct {
 	bw *matchfinder.Writer
 }
 
+func (b *brotliWriter) WriteHeader(code int) {
+	b.ResponseWriter.Header().Del("Content-Length")
+	b.ResponseWriter.WriteHeader(code)
+}
+
 func (b *brotliWriter) Write(p []byte) (int, error) {
 	return b.bw.Write(p)
 }
@@ -63,8 +68,9 @@ func Brotli(skipPaths ...string) rex.Middleware {
 
 			originalWriter := c.Response
 			c.Response = brw
-			defer func() { c.Response = originalWriter }()
-			return next(c)
+			err := next(c)
+			c.Response = originalWriter
+			return err
 		}
 	}
 }

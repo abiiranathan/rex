@@ -151,7 +151,10 @@ func main() {
 	r.POST("/logout", logout)
 
 	log.Println("Server started on 0.0.0.0:8080")
-	srv := rex.NewServer(":8080", r)
+	srv, err := rex.NewServer(":8080", r)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	defer srv.Shutdown()
 	log.Fatalln(srv.ListenAndServe())
 }

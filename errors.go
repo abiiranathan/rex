@@ -31,7 +31,7 @@ func writeHtmlError(c *Context, errs map[string]string) {
 		htmlReply.WriteString("</p>")
 	}
 	htmlReply.WriteString("</div>")
-	c.HTML(htmlReply.String())
+	_ = c.HTML(htmlReply.String())
 }
 
 func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
@@ -39,7 +39,7 @@ func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
 	contentType := c.ContentType()
 	c.WriteHeader(http.StatusBadRequest)
 	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
-		c.JSON(errs)
+		_ = c.JSON(errs)
 	} else {
 		writeHtmlError(c, errs)
 	}
@@ -52,7 +52,7 @@ func (*errorHandler) FormErrors(c *Context, err FormError) {
 	c.WriteHeader(http.StatusBadRequest)
 
 	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
-		c.JSON(err)
+		_ = c.JSON(err)
 	} else {
 		var htmlReply strings.Builder
 		htmlReply.WriteString(`<div class="rex_error">`)
@@ -60,7 +60,7 @@ func (*errorHandler) FormErrors(c *Context, err FormError) {
 		htmlReply.WriteString(err.Err.Error())
 		htmlReply.WriteString("</p>")
 		htmlReply.WriteString("</div>")
-		c.HTML(htmlReply.String())
+		_ = c.HTML(htmlReply.String())
 	}
 }
 
@@ -75,14 +75,14 @@ func (*errorHandler) GenericErrors(ctx *Context, err error) {
 
 	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
 		ctx.WriteHeader(statusCode)
-		ctx.JSON(Map{"error": err.Error()})
+		_ = ctx.JSON(Map{"error": err.Error()})
 	} else {
 		isHtmx := ctx.Request.Header.Get("HX-Request") == "true"
 		if isHtmx || ctx.router.errorTemplate == "" {
 			ctx.WriteHeader(statusCode)
-			ctx.Write([]byte(err.Error()))
+			_, _ = ctx.Write([]byte(err.Error()))
 		} else {
-			ctx.RenderError(ctx.Response, err, statusCode)
+			_ = ctx.RenderError(ctx.Response, err, statusCode)
 		}
 	}
 }

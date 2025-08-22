@@ -173,7 +173,7 @@ func validateMap(c *Context, m Map) error {
 // If a file extension is missing, it will be appended as ".html".
 func (c *Context) Render(name string, data Map) error {
 	if c.router.template == nil {
-		return fmt.Errorf("no template is configured")
+		return fmt.Errorf("no template is configured: unable to render template %q", name)
 	}
 
 	// pass the request context to the views
@@ -193,7 +193,7 @@ func (c *Context) Render(name string, data Map) error {
 // Execute a standalone template without a layout.
 func (c *Context) ExecuteTemplate(name string, data Map) error {
 	if c.router.template == nil {
-		return fmt.Errorf("no template is configured")
+		return fmt.Errorf("no template is configured: unable to render template %q", name)
 	}
 
 	// pass the request context to the views

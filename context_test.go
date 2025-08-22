@@ -251,7 +251,10 @@ func TestFormFileOperations(t *testing.T) {
 	// create a temp file
 	dirname := t.TempDir()
 	filename := dirname + "/upload.txt"
-	os.WriteFile(filename, []byte("hello"), 0644)
+	err := os.WriteFile(filename, []byte("hello"), 0644)
+	if err != nil {
+		t.Error(err)
+	}
 
 	buf := new(bytes.Buffer)
 	writer := multipart.NewWriter(buf)

@@ -51,7 +51,8 @@ func New(opts ...CORSOptions) rex.Middleware {
 				}
 
 				if !allowed {
-					return c.WriteHeader(http.StatusForbidden)
+					c.WriteHeader(http.StatusForbidden)
+					return nil
 				}
 			}
 

@@ -50,7 +50,7 @@ type Config struct {
 	Options *slog.HandlerOptions
 
 	// Callback is a function that can be used to modify the arguments passed to the logger.
-	// Forexample the request_id, user_id etc.
+	// Forexample the request_id, user_id etc. It MUST return an even number of arguments.
 	Callback func(c *rex.Context, args ...any) []any
 }
 

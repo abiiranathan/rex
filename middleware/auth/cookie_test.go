@@ -21,7 +21,8 @@ type User struct {
 }
 
 func errorCallback(c *rex.Context) error {
-	return c.WriteHeader(http.StatusUnauthorized)
+	c.WriteHeader(http.StatusUnauthorized)
+	return nil
 }
 
 func skipAuth(c *rex.Context) bool {
@@ -48,14 +49,16 @@ func TestCookieMiddleware(t *testing.T) {
 	router.POST("/login", func(c *rex.Context) error {
 		contentType := c.ContentType()
 		if contentType != "application/x-www-form-urlencoded" && contentType != "multipart/form-data" {
-			return c.WriteHeader(http.StatusBadRequest)
+			c.WriteHeader(http.StatusBadRequest)
+			return nil
 		}
 
 		username := c.FormValue("username")
 		password := c.FormValue("password")
 
 		if username == "" || password == "" {
-			return c.WriteHeader(http.StatusBadRequest)
+			c.WriteHeader(http.StatusBadRequest)
+			return nil
 		}
 
 		// validate user credentials here

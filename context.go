@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -101,9 +102,8 @@ func (c *Context) HTML(html string) error {
 	return err
 }
 
-func (c *Context) WriteHeader(status int) error {
+func (c *Context) WriteHeader(status int) {
 	c.Response.WriteHeader(status)
-	return nil
 }
 
 // Write sends a raw response
@@ -121,9 +121,10 @@ func (c *Context) Send(data []byte) error {
 // Error sends an error response as plain text.
 // You can optionally pass a content type.
 // Status code is expected to be between 400 and 599.
-func (c *Context) Error(err error, status int, contentType ...string) error {
+func (c *Context) Error(err error, status int, contentType ...string) {
 	if status < 400 || status > 599 {
-		return errors.New("status code must be between 400 and 599")
+		log.Println("status code must be between 400 and 599")
+		return
 	}
 
 	if len(contentType) > 0 && contentType[0] != "" {
@@ -133,8 +134,7 @@ func (c *Context) Error(err error, status int, contentType ...string) error {
 	}
 
 	c.Response.WriteHeader(status)
-	_, e := c.Response.Write([]byte(err.Error()))
-	return e
+	_, _ = c.Response.Write([]byte(err.Error()))
 }
 
 // Param gets a path parameter value by name from the request.
@@ -169,9 +169,8 @@ func (c *Context) ParamInt(key string, defaults ...int) int {
 	return vInt
 }
 
-// paramUInt returns the value of the parameter as an unsigned integer
-// If the parameter is not found, it checks the redirect options.
-func (c *Context) ParamUInt(key string, defaults ...uint) uint {
+// ParamUint returns the value of the parameter as an unsigned integer
+func (c *Context) ParamUint(key string, defaults ...uint) uint {
 	v := c.Param(key)
 	if v == "" && len(defaults) > 0 {
 		return defaults[0]
@@ -187,8 +186,24 @@ func (c *Context) ParamUInt(key string, defaults ...uint) uint {
 	return uint(vInt)
 }
 
+// ParamInt64 returns the value of the parameter as an int64.
+func (c *Context) ParamInt64(key string, defaults ...int64) int64 {
+	v := c.Param(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	vInt, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return vInt
+}
+
 // Query returns the value of the query as a string.
-// If the query is not found, it checks the redirect options.
 func (c *Context) Query(key string, defaults ...string) string {
 	v := c.Request.URL.Query().Get(key)
 	if v == "" {
@@ -206,7 +221,6 @@ func (c *Context) Query(key string, defaults ...string) string {
 }
 
 // queryInt returns the value of the query as an integer
-// If the query is not found, it checks the redirect options.
 func (c *Context) QueryInt(key string, defaults ...int) int {
 	v := c.Query(key)
 	if v == "" && len(defaults) > 0 {
@@ -223,8 +237,24 @@ func (c *Context) QueryInt(key string, defaults ...int) int {
 	return vInt
 }
 
+// queryInt returns the value of the query as an int64
+func (c *Context) QueryInt64(key string, defaults ...int64) int64 {
+	v := c.Query(key)
+	if v == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	vInt, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return vInt
+}
+
 // QueryUInt returns the value of the query as an unsigned integer
-// If the query is not found, it checks the redirect options.
 func (c *Context) QueryUInt(key string, defaults ...uint) uint {
 	v := c.Query(key)
 	if v == "" && len(defaults) > 0 {

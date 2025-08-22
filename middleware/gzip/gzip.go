@@ -16,6 +16,11 @@ type gzipWriter struct {
 	gw *gzip.Writer
 }
 
+func (g *gzipWriter) WriteHeader(code int) {
+	g.ResponseWriter.Header().Del("Content-Length")
+	g.ResponseWriter.WriteHeader(code)
+}
+
 func (g *gzipWriter) Write(p []byte) (int, error) {
 	return g.gw.Write(p)
 }
@@ -59,15 +64,13 @@ func Gzip(skipPaths ...string) rex.Middleware {
 			}
 			defer gw.Close()
 
-			grw := &gzipWriter{
-				ResponseWriter: c.Response,
-				gw:             gw,
-			}
+			grw := &gzipWriter{ResponseWriter: c.Response, gw: gw}
 
 			originalWriter := c.Response
 			c.Response = grw
-			defer func() { c.Response = originalWriter }()
-			return next(c)
+			err = next(c)
+			c.Response = originalWriter
+			return err
 		}
 	}
 }
