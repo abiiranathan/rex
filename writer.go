@@ -69,6 +69,14 @@ func (w *ResponseWriter) Flush() {
 	}
 }
 
+// Push implements http.Pusher interface for HTTP/2 server push
+func (w *ResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.writer.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
 // Hijack lets the caller take over the connection.
 func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := w.writer.(http.Hijacker); ok {

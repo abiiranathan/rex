@@ -15,8 +15,8 @@ import (
 var flashMessageStore sessions.Store
 
 const (
-	sessionName     string = "flash_messages_session"
-	flashMessageKey        = "flash_message"
+	sessionName     = "flash_messages_session"
+	flashMessageKey = "flash_message"
 )
 
 // setFlashMessage sets a flash message for the given key
@@ -58,7 +58,7 @@ func clearCookie(c *rex.Context) error {
 func getFlashMessage(c *rex.Context, key string) (Flash, error) {
 	sess, _ := flashMessageStore.Get(c.Request, sessionName)
 	if message, ok := sess.Values[key]; ok {
-		clearCookie(c)
+		_ = clearCookie(c)
 		return message.(Flash), nil
 	}
 	return Flash{}, fmt.Errorf("no flash message found for key %s", key)

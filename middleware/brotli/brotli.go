@@ -63,10 +63,8 @@ func Brotli(skipPaths ...string) rex.Middleware {
 
 			originalWriter := c.Response
 			c.Response = brw
-			err := next(c)
-			c.Response = originalWriter
-			return err
-
+			defer func() { c.Response = originalWriter }()
+			return next(c)
 		}
 	}
 }

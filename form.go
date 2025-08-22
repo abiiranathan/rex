@@ -338,11 +338,12 @@ func setField(name string, fieldVal reflect.Value, value any, timezone ...*time.
 		v, err := strconv.ParseBool(value.(string))
 		if err != nil {
 			// try parsing on/off since html forms use on/off for checkboxes
-			if value.(string) == "on" {
+			switch value.(string) {
+			case "on":
 				v = true
-			} else if value.(string) == "off" {
+			case "off":
 				v = false
-			} else {
+			default:
 				return errors.Wrapf(err, "invalid boolean value: %v", value)
 			}
 		}
@@ -468,11 +469,12 @@ func handleSlice(name string, fieldVal reflect.Value, value any, timezone *time.
 			n, err := strconv.ParseBool(v)
 			if err != nil {
 				// try parsing on/off since html forms use on/off for checkboxes
-				if v == "on" {
+				switch v {
+				case "on":
 					n = true
-				} else if v == "off" {
+				case "off":
 					n = false
-				} else {
+				default:
 					return err
 				}
 			}

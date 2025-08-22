@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"encoding/gob"
+	"log"
 	"net/http"
 	"time"
 
@@ -16,22 +17,30 @@ import (
 	"github.com/pkg/errors"
 )
 
-var store *sessions.CookieStore
-var ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
-
-type cookieSkipped string
-type cookieSession string
-
-const cookieAuthIsSkipped = cookieSkipped("cookie_auth_skipped")
-const sessionKey = cookieSession("cookie_session_key")
-
-const (
-	authKey  = "rex_authenticated"
-	stateKey = "rex_auth_state"
+// Context variables
+// =======================
+type (
+	cookieSkipped string
+	cookieSession string
 )
 
-// The cookie session name.
-var rexSessionName string
+const (
+	authSkipped = cookieSkipped("cookie_auth_skipped")
+	sessionKey  = cookieSession("cookie_session_key")
+	authKey     = "rex_authenticated"
+	stateKey    = "rex_auth_state"
+)
+
+var (
+	// Cookie store.
+	store *sessions.CookieStore
+
+	// The cookie session name.
+	rexSessionName string
+
+	// ErrNotInitialized is returned when store is not initialized.
+	ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
+)
 
 type CookieConfig struct {
 	// Cookie options.
@@ -60,6 +69,13 @@ The encryption key, if set, must be either 16, 24, or 32 bytes to select AES-128
 userType is the struct instance that is registered with the gob encoder.
 */
 func InitializeCookieStore(keyPairs [][]byte, userType any) {
+	if len(keyPairs) < 1 {
+		panic("you must pass atleast one keyPair")
+	}
+	if userType == nil {
+		panic("userType must not be nil")
+	}
+
 	store = sessions.NewCookieStore(keyPairs...)
 	gob.Register(userType)
 }
@@ -73,7 +89,7 @@ func InitializeCookieStore(keyPairs [][]byte, userType any) {
 // Access the session with c.Get(auth.SessionKey). It will be nil if not logged in.
 func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 	if sessionName == "" {
-		panic("config.SessionName is required")
+		panic("sessionName is required")
 	}
 
 	if config.ErrorHandler == nil {
@@ -115,7 +131,7 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 		return func(c *rex.Context) error {
 			handleError := func() error {
 				if config.SkipAuth != nil && config.SkipAuth(c) {
-					c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), cookieAuthIsSkipped, true))
+					c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), authSkipped, true))
 					return next(c)
 				}
 				return config.ErrorHandler(c)
@@ -160,14 +176,10 @@ func CookieValue(c *rex.Context) (state any) {
 }
 
 // ClearAuthState deletes authentication state.
-func ClearAuthState(c *rex.Context) error {
-	if store == nil {
-		return ErrNotInitialized
-	}
-
+func ClearAuthState(c *rex.Context) {
 	session, _ := store.Get(c.Request, rexSessionName)
 	if session.IsNew {
-		return nil
+		return
 	}
 
 	for k := range session.Values {
@@ -176,18 +188,21 @@ func ClearAuthState(c *rex.Context) error {
 
 	cookie, err := c.Request.Cookie(rexSessionName)
 	if err != nil {
-		return nil
+		log.Println(err)
+		return
 	}
 
 	cookie.MaxAge = -1
 	http.SetCookie(c.Response, cookie)
 
-	return session.Save(c.Request, c.Response)
+	if err := session.Save(c.Request, c.Response); err != nil {
+		log.Println(err)
+	}
 }
 
-// Returns true if JWT authentication was skipped.
+// Returns true if Cookie auth was authentication was skipped.
 func CookieAuthSkipped(r *http.Request) bool {
-	value := r.Context().Value(cookieAuthIsSkipped)
+	value := r.Context().Value(authSkipped)
 	if skipped, ok := value.(bool); skipped && ok {
 		return true
 	}

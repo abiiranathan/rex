@@ -60,6 +60,10 @@ func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 // CreateToken creates a new JWT token with the given payload and expiry duration.
 // JWT is signed with the given secret key using the HMAC256 algorithm.
 func CreateJWTToken(secret string, payload any, exp time.Duration) (string, error) {
+	if secret == "" {
+		return "", fmt.Errorf("secret key must not be empty")
+	}
+
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
 	claims["payload"] = payload
@@ -97,7 +101,7 @@ func JwtClaims(req *http.Request) (jwt.MapClaims, error) {
 	if claims, ok := req.Context().Value(jwtClaimsKey).(jwt.MapClaims); ok {
 		return claims, nil
 	}
-	return nil, fmt.Errorf("invalid JWT claims")
+	return nil, fmt.Errorf("invalid or missing JWT claims")
 }
 
 // Returns true if JWT authentication was skipped.

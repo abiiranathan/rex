@@ -88,10 +88,8 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 			// the Response is assumed to be rex.ResponseWriter
 			originalWriter := c.Response
 			c.Response = ew
+			defer func() { c.Response = originalWriter }()
 			err := next(c)
-			// Restore writer
-			c.Response = originalWriter
-
 			// Return error after restoring the response writer
 			if err != nil {
 				return err
@@ -99,7 +97,7 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 
 			if ew.status != http.StatusOK {
 				// For non-200 responses, write the status and body without ETag
-				c.WriteHeader(ew.status)
+				_ = c.WriteHeader(ew.status)
 				_, err := ew.buf.WriteTo(c.Response)
 				return err
 			}
@@ -121,7 +119,7 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 			}
 
 			// Write the status and body for 200 OK responses
-			c.WriteHeader(ew.status)
+			_ = c.WriteHeader(ew.status)
 			_, err = ew.buf.WriteTo(c.Response)
 			return err
 		}

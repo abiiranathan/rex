@@ -20,9 +20,8 @@ import (
 )
 
 const (
-	formKeyName = "csrf_token"   // CSRF token in form
-	sessionName = "csrf_session" // Session name for CSRF token storage
-	cookieName  = "csrf_token"   // CSRF token in HTTP-only cookie
+	formKeyName = "csrf_token" // CSRF token in form
+	cookieName  = "csrf_token" // CSRF token in HTTP-only cookie
 )
 
 var (
@@ -34,10 +33,7 @@ var (
 // Generates a random CSRF token.
 func CreateToken() (string, error) {
 	tokenBytes := make([]byte, 32) // Generate 32 random bytes
-	_, err := rand.Read(tokenBytes)
-	if err != nil {
-		return "", err
-	}
+	_, _ = rand.Read(tokenBytes)   // never returns an error
 	return base64.StdEncoding.EncodeToString(tokenBytes), nil
 }
 
