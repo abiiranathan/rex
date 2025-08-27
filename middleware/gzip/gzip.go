@@ -13,20 +13,32 @@ import (
 
 type gzipWriter struct {
 	http.ResponseWriter
-	gw *gzip.Writer
+	gw            *gzip.Writer
+	headerWritten bool
 }
 
 func (g *gzipWriter) WriteHeader(code int) {
-	g.ResponseWriter.Header().Del("Content-Length")
+	if !g.headerWritten {
+		// Only set gzip headers when we actually write content
+		g.ResponseWriter.Header().Set("Content-Encoding", "gzip")
+		g.ResponseWriter.Header().Del("Content-Length")
+		g.headerWritten = true
+	}
 	g.ResponseWriter.WriteHeader(code)
 }
 
 func (g *gzipWriter) Write(p []byte) (int, error) {
+	if !g.headerWritten {
+		// Ensure headers are written before first write
+		g.WriteHeader(http.StatusOK)
+	}
 	return g.gw.Write(p)
 }
 
 func (g *gzipWriter) Flush() {
-	g.gw.Flush()
+	if g.gw != nil {
+		g.gw.Flush()
+	}
 	if flusher, ok := g.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -39,37 +51,49 @@ func (g *gzipWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("http.Hijacker interface is not supported")
 }
 
-// Gzip compression middleware.
 func Gzip(skipPaths ...string) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
+			// Skip if path is in skipPaths
 			for _, path := range skipPaths {
 				if strings.HasPrefix(c.Path(), path) {
 					return next(c)
 				}
 			}
 
+			// Skip if client doesn't accept gzip
 			if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
 				return next(c)
 			}
 
-			c.SetHeader("Content-Encoding", "gzip")
-
-			// No content Length on compressed data.
-			c.DelHeader("Content-Length")
-
+			// Create gzip writer
 			gw, err := gzip.NewWriterLevel(c.Response, gzip.DefaultCompression)
 			if err != nil {
 				return err
 			}
-			defer gw.Close()
 
-			grw := &gzipWriter{ResponseWriter: c.Response, gw: gw}
+			// Create wrapper
+			grw := &gzipWriter{
+				ResponseWriter: c.Response,
+				gw:             gw,
+				headerWritten:  false,
+			}
 
+			// Replace the response writer
 			originalWriter := c.Response
 			c.Response = grw
+
+			// Call next handler
 			err = next(c)
+
+			// Ensure gzip writer is properly closed
+			if closeErr := gw.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+
+			// Restore original writer
 			c.Response = originalWriter
+
 			return err
 		}
 	}
