@@ -100,7 +100,7 @@ func (c *Context) BodyParser(v any, loc ...*time.Location) error {
 	r := c.Request
 	// Make sure v is a pointer to a struct
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Struct {
+	if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Struct {
 		return FormError{
 			Err:   fmt.Errorf("v must be a pointer to a struct"),
 			Kind:  InvalidStructPointer,
@@ -305,40 +305,86 @@ func setField(name string, fieldVal reflect.Value, value any, timezone ...*time.
 	}
 
 	// Dereference pointer if the field is a pointer
-	if fieldVal.Kind() == reflect.Ptr {
-		// Create a new value of the underlying type
+	if fieldVal.Kind() == reflect.Pointer {
 		if fieldVal.IsNil() {
 			fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
 		}
 		fieldVal = fieldVal.Elem()
 	}
 
+	// helper to safely get a string
+	toString := func(v any) (string, error) {
+		switch s := v.(type) {
+		case string:
+			return s, nil
+		case []byte:
+			return string(s), nil
+		case fmt.Stringer:
+			return s.String(), nil
+		case []string:
+			if len(s) > 0 {
+				return s[0], nil
+			}
+			return "", fmt.Errorf("empty []string provided")
+		default:
+			return "", fmt.Errorf("expected string-like value, got %T", v)
+		}
+	}
+
 	switch fieldVal.Kind() {
 	case reflect.String:
-		fieldVal.SetString(value.(string))
+		s, err := toString(value)
+		if err != nil {
+			return FormError{
+				Err:   err,
+				Kind:  UnsupportedType,
+				Field: name,
+			}
+		}
+		fieldVal.SetString(s)
+
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		v, err := strconv.ParseInt(value.(string), 10, 64)
+		s, err := toString(value)
+		if err != nil {
+			return err
+		}
+		v, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			return errors.Wrapf(err, "invalid int value: %v", value)
 		}
 		fieldVal.SetInt(v)
+
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		v, err := strconv.ParseUint(value.(string), 10, 64)
+		s, err := toString(value)
+		if err != nil {
+			return err
+		}
+		v, err := strconv.ParseUint(s, 10, 64)
 		if err != nil {
 			return errors.Wrapf(err, "invalid uint value: %v", value)
 		}
 		fieldVal.SetUint(v)
+
 	case reflect.Float32, reflect.Float64:
-		v, err := strconv.ParseFloat(value.(string), 64)
+		s, err := toString(value)
 		if err != nil {
-			return errors.Wrapf(err, "invalid float32 value: %v", v)
+			return err
+		}
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return errors.Wrapf(err, "invalid float value: %v", value)
 		}
 		fieldVal.SetFloat(v)
+
 	case reflect.Bool:
-		v, err := strconv.ParseBool(value.(string))
+		s, err := toString(value)
 		if err != nil {
-			// try parsing on/off since html forms use on/off for checkboxes
-			switch value.(string) {
+			return err
+		}
+		v, err := strconv.ParseBool(s)
+		if err != nil {
+			// try parsing on/off since HTML forms use on/off for checkboxes
+			switch strings.ToLower(s) {
 			case "on":
 				v = true
 			case "off":
@@ -348,21 +394,24 @@ func setField(name string, fieldVal reflect.Value, value any, timezone ...*time.
 			}
 		}
 		fieldVal.SetBool(v)
+
 	case reflect.Slice:
-		// Handle slice types
 		return handleSlice(name, fieldVal, value, tz)
+
 	case reflect.Struct:
 		if fieldVal.Type() == reflect.TypeOf(time.Time{}) {
-			t, err := ParseTime(value.(string), tz)
+			s, err := toString(value)
+			if err != nil {
+				return err
+			}
+			t, err := ParseTime(s, tz)
 			if err != nil {
 				return err
 			}
 			fieldVal.Set(reflect.ValueOf(t))
+		} else if scanner, ok := fieldVal.Addr().Interface().(FormScanner); ok {
+			return scanner.FormScan(value)
 		} else {
-			// Check if the field implements the FormScanner interface
-			if scanner, ok := fieldVal.Addr().Interface().(FormScanner); ok {
-				return scanner.FormScan(value)
-			}
 			return FormError{
 				Err:   fmt.Errorf("unsupported type: %v: %v, a custom struct must implement rex.FormScanner interface", fieldVal.Kind(), value),
 				Kind:  UnsupportedType,
@@ -376,13 +425,11 @@ func setField(name string, fieldVal reflect.Value, value any, timezone ...*time.
 				return scanner.FormScan(value)
 			}
 		}
-
 		return FormError{
 			Err:   fmt.Errorf("unsupported type: %s, a custom struct must implement rex.FormScanner interface", fieldVal.Kind()),
 			Kind:  UnsupportedType,
 			Field: name,
 		}
-
 	}
 
 	return nil
@@ -416,7 +463,7 @@ func handleSlice(name string, fieldVal reflect.Value, value any, timezone *time.
 	}
 
 	// If we have a pointer to a slice, call handleSlice recursively
-	if fieldVal.Kind() == reflect.Ptr {
+	if fieldVal.Kind() == reflect.Pointer {
 		// We can't call of reflect.Value.Type on zero Value
 		if fieldVal.IsNil() {
 			fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
@@ -520,7 +567,7 @@ func handleSlice(name string, fieldVal reflect.Value, value any, timezone *time.
 		}
 	default:
 		elemType := fieldVal.Type().Elem()
-		if elemType.Kind() == reflect.Ptr {
+		if elemType.Kind() == reflect.Pointer {
 			elemType = elemType.Elem()
 		}
 
@@ -569,7 +616,7 @@ func (c *Context) QueryParser(v any, tag ...string) error {
 
 	// Make sure v is a pointer to a struct
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Struct {
+	if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Struct {
 		return FormError{
 			Err:  fmt.Errorf("v must be a pointer to a struct"),
 			Kind: InvalidStructPointer,
