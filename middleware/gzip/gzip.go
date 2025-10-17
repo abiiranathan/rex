@@ -66,41 +66,36 @@ func Gzip(skipPaths ...string) rex.Middleware {
 				return next(c)
 			}
 
-			// Create gzip writer
-			gw, err := gzip.NewWriterLevel(c.Response, gzip.DefaultCompression)
-			if err != nil {
-				return err
+			var (
+				gw      *gzip.Writer
+				created bool
+			)
+			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+				z, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
+				if err != nil {
+					// Fallback: do not wrap; keep original writer
+					return w
+				}
+				gw = z
+				created = true
+				return &gzipWriter{ResponseWriter: w, gw: z}
+			})
+			defer restore()
+			if created {
+				defer gw.Close()
 			}
 
-			// Create wrapper
-			grw := &gzipWriter{
-				ResponseWriter: c.Response,
-				gw:             gw,
-				headerWritten:  false,
-			}
-
-			// Replace the response writer
-			originalWriter := c.Response
-			c.Response = grw
-
-			// Call next handler
-			err = next(c)
-
-			// Ensure gzip writer is properly closed
-			if closeErr := gw.Close(); closeErr != nil && err == nil {
-				err = closeErr
-			}
-
-			// Restore original writer
-			c.Response = originalWriter
-
-			return err
+			return next(c)
 		}
 	}
 }
 
 // GzipLevel creates a gzip middleware with a specific compression level.
 func GzipLevel(level int, skipPaths ...string) rex.Middleware {
+	if level < gzip.HuffmanOnly || level > gzip.BestCompression {
+		panic(fmt.Errorf("gzip: invalid compression level: %d", level))
+	}
+
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
 			for _, path := range skipPaths {
@@ -113,25 +108,15 @@ func GzipLevel(level int, skipPaths ...string) rex.Middleware {
 				return next(c)
 			}
 
-			c.SetHeader("Content-Encoding", "gzip")
-
-			// No content Length on compressed data.
-			c.DelHeader("Content-Length")
-
-			gw, err := gzip.NewWriterLevel(c.Response, level)
-			if err != nil {
-				return err
-			}
+			var gw *gzip.Writer
+			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+				z, _ := gzip.NewWriterLevel(w, level)
+				gw = z
+				return &gzipWriter{ResponseWriter: w, gw: z}
+			})
+			defer restore()
 			defer gw.Close()
 
-			grw := &gzipWriter{
-				ResponseWriter: c.Response,
-				gw:             gw,
-			}
-
-			originalWriter := c.Response
-			c.Response = grw
-			defer func() { c.Response = originalWriter }()
 			return next(c)
 		}
 	}

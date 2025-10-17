@@ -128,17 +128,26 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 					c.router = router
 				}
 
-				originalWriter := c.Response
-				defer func() {
-					c.Response = originalWriter
-				}()
+				restore := func() {}
+				if rw, ok := c.Response.(*ResponseWriter); ok {
+					// Avoid swapping to self which would cause recursion
+					if w != rw {
+						restore = rw.SwapUnderlying(w)
+					}
+				}
+				defer restore()
 
-				c.Response = w
 				c.err = next(c)
 			})
 
 			handler = middleware(handler)
-			handler.ServeHTTP(c.Response, c.Request)
+
+			// Pass the underlying writer into the middleware chain so it can wrap it.
+			if rw, ok := c.Response.(*ResponseWriter); ok {
+				handler.ServeHTTP(rw.writer, c.Request)
+			} else {
+				handler.ServeHTTP(c.Response, c.Request)
+			}
 
 			// If an error was set in request context, return it
 			errValue := c.Request.Context().Value(contextErrorKey)
@@ -308,6 +317,15 @@ func NewRouter(options ...RouterOption) *Router {
 	for _, option := range options {
 		option(r)
 	}
+
+	if r.template != nil && r.baseLayout == "" {
+		panic("baseLayout is required when templates are set")
+	}
+
+	if r.template != nil && r.contentBlock == "" {
+		panic("contentBlock is required when templates are set")
+	}
+
 	return r
 }
 
@@ -442,7 +460,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 		}
 
 		// Router logic
-		ctx.Response.(*ResponseWriter).skipBody = skipBody
+		ctx.SetSkipBody(skipBody)
 
 		// Execute the handler and handle any errors
 		err := final(ctx)
@@ -450,7 +468,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 		end := time.Now()
 
 		latency := end.Sub(start)
-		ctx.Response.(*ResponseWriter).latency = latency
+		ctx.setLatency(latency)
 
 		// Call the error handler if an error is returned or not
 		// This allows the errorHandler to handle errors that are not returned by the handler.

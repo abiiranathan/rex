@@ -58,19 +58,16 @@ func Brotli(skipPaths ...string) rex.Middleware {
 			// No content Length on compressed data.
 			c.DelHeader("Content-Length")
 
-			bw := brotli.NewWriterV2(c.Response, 7)
+			var bw *matchfinder.Writer
+			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+				bw = brotli.NewWriterV2(w, 7)
+				return &brotliWriter{ResponseWriter: w, bw: bw}
+			})
+
+			defer restore()
 			defer bw.Close()
 
-			brw := &brotliWriter{
-				ResponseWriter: c.Response,
-				bw:             bw,
-			}
-
-			originalWriter := c.Response
-			c.Response = brw
-			err := next(c)
-			c.Response = originalWriter
-			return err
+			return next(c)
 		}
 	}
 }

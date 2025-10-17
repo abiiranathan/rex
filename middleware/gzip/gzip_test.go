@@ -213,27 +213,6 @@ func TestGzipLevel_BestCompression(t *testing.T) {
 	}
 }
 
-func TestGzipLevel_InvalidLevel(t *testing.T) {
-	app := rex.NewRouter()
-	app.Use(GzipLevel(10)) // Invalid compression level
-
-	app.GET("/test", func(c *rex.Context) error {
-		return c.String("Hello, World!")
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	// Should handle error gracefully - exact behavior depends on rex error handling
-	// This test ensures the middleware doesn't panic
-	if w.Code == 0 {
-		t.Error("middleware should handle invalid compression level gracefully")
-	}
-}
-
 func TestGzip_JSONResponse(t *testing.T) {
 	app := rex.NewRouter()
 	app.Use(Gzip())

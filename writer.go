@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"time"
 )
 
 // ResponseWriter wraps http.ResponseWriter with additional functionality
@@ -16,7 +15,6 @@ type ResponseWriter struct {
 	size       int                 // The size of the response sent so far
 	statusSent bool                // If the status has been sent
 	skipBody   bool                // If its a HEAD request, we should skip the body
-	latency    time.Duration       // The latency of the response.
 }
 
 // ResponseWriter interface
@@ -60,6 +58,32 @@ func (w *ResponseWriter) Status() int {
 func (w *ResponseWriter) Size() int {
 	return w.size
 }
+
+// SwapUnderlying replaces the underlying http.ResponseWriter with nw.
+// It returns a restore function that, when called, restores the previous writer.
+func (w *ResponseWriter) SwapUnderlying(nw http.ResponseWriter) (restore func()) {
+	old := w.writer
+	w.writer = nw
+	return func() { w.writer = old }
+}
+
+// Wrap applies a transformation to the current underlying writer and swaps to it.
+// It returns a restore function that, when called, restores the previous writer.
+func (w *ResponseWriter) Wrap(fn func(http.ResponseWriter) http.ResponseWriter) (restore func()) {
+	return w.SwapUnderlying(fn(w.writer))
+}
+
+// SetSkipBody toggles writing of response body (used for HEAD requests).
+func (w *ResponseWriter) SetSkipBody(enabled bool) { w.skipBody = enabled }
+
+// SkipBody returns whether the body should be skipped.
+func (w *ResponseWriter) SkipBody() bool { return w.skipBody }
+
+// StatusCode returns the recorded status code.
+func (w *ResponseWriter) StatusCode() int { return w.status }
+
+// BytesWritten returns the number of bytes written to the body so far.
+func (w *ResponseWriter) BytesWritten() int { return w.size }
 
 // Implements the http.Flusher interface to allow an HTTP handler to flush buffered data to the client.
 // This is useful for chunked responses and server-sent events.

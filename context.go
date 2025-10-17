@@ -29,6 +29,7 @@ type Context struct {
 	mu           sync.RWMutex        // Mutex for the locals map
 	err          error               // Tracks any error encountered in middleware
 	currentRoute *route              // The current route.
+	latency      time.Duration       // Request latency tracked by router
 }
 
 // SetHeader sets a header in the response
@@ -452,20 +453,46 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 // Returns the status code of the response.
 func (c *Context) StatusCode() int {
 	if wrapped, ok := c.Response.(*ResponseWriter); ok {
-		return wrapped.status
+		return wrapped.StatusCode()
 	} else {
-		return 0
+		return http.StatusOK
 	}
 }
 
 // Latency returns the duration of the request including the time it took to write the response,
 // execute the middleware and the handler.
 func (c *Context) Latency() time.Duration {
-	if wrapped, ok := c.Response.(*ResponseWriter); ok {
-		return wrapped.latency
-	} else {
-		return 0
+	return c.latency
+}
+
+// setLatency sets the latency; used by router after handler completes
+func (c *Context) setLatency(d time.Duration) { c.latency = d }
+
+// WrapWriter applies a function to wrap the underlying writer safely
+// and returns a restore function to revert to the previous writer.
+func (c *Context) WrapWriter(fn func(http.ResponseWriter) http.ResponseWriter) (restore func()) {
+	if rw, ok := c.Response.(*ResponseWriter); ok {
+		return rw.Wrap(fn)
 	}
+	// Fallback: replace the response directly
+	old := c.Response
+	c.Response = fn(old)
+	return func() { c.Response = old }
+}
+
+// SetSkipBody toggles writing of the response body (for HEAD requests)
+func (c *Context) SetSkipBody(enabled bool) {
+	if rw, ok := c.Response.(*ResponseWriter); ok {
+		rw.SetSkipBody(enabled)
+	}
+}
+
+// SkipBody indicates if the response body should be skipped
+func (c *Context) SkipBody() bool {
+	if rw, ok := c.Response.(*ResponseWriter); ok {
+		return rw.SkipBody()
+	}
+	return false
 }
 
 // Returns the *rex.Router instance.

@@ -80,16 +80,14 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 				hash:           sha1.New(),
 				status:         http.StatusOK,
 			}
-
 			ew.w = io.MultiWriter(&ew.buf, ew.hash)
 
-			// Override the response writer
-			// This may cause some incompatibilities where
-			// the Response is assumed to be rex.ResponseWriter
-			originalWriter := c.Response
-			c.Response = ew
+			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+				ew.ResponseWriter = w
+				return ew
+			})
 			err := next(c)
-			c.Response = originalWriter
+			restore()
 			// Return error after restoring the response writer
 			if err != nil {
 				return err

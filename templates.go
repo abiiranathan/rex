@@ -284,8 +284,8 @@ func ParseTemplatesFS(root fs.FS, rootDir string, funcMap template.FuncMap, suff
 		ext = suffix[0]
 	}
 
-	pfx := len(rootDir) + 1  // +1 for the trailing slash
-	tmpl := template.New("") // Create a new template
+	pfx := len(rootDir) + 1      // +1 for the trailing slash
+	tmpl := template.New("root") // Create a new template
 
 	err := fs.WalkDir(root, rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

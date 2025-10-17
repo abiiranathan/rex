@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/abiiranathan/rex"
+	"github.com/abiiranathan/rex/middleware/brotli"
 	"github.com/abiiranathan/rex/middleware/cors"
 	"github.com/abiiranathan/rex/middleware/csrf"
+	"github.com/abiiranathan/rex/middleware/etag"
 	"github.com/abiiranathan/rex/middleware/logger"
 	"github.com/abiiranathan/rex/middleware/recovery"
 	"github.com/gorilla/sessions"
@@ -25,6 +27,8 @@ func main() {
 		panic(err)
 	}
 
+	log.Println(t.DefinedTemplates())
+
 	// Create a new router
 	rex.NoTrailingSlash = true
 	rex.ServeMinified = true
@@ -32,12 +36,15 @@ func main() {
 	mux := rex.NewRouter(
 		rex.WithTemplates(t),
 		rex.PassContextToViews(true),
+		rex.BaseLayout("static/index.html"),
+		rex.ContentBlock("Content"),
 	)
 
 	mux.Use(recovery.New(recovery.WithStackTrace(true)))
 	mux.Use(logger.New(logger.DefaultConfig))
-	// mux.Use(etag.New())
+	mux.Use(etag.New())
 	mux.Use(cors.New())
+	mux.Use(brotli.Brotli())
 
 	// Create a cookie store.
 	var store = sessions.NewCookieStore([]byte("secret key"))
@@ -67,6 +74,11 @@ func main() {
 	})
 
 	mux.GET("/", func(c *rex.Context) error {
+		log.Println("Rendering index.html")
+		log.Println(c.Request.URL.Path)
+		log.Println(c.Request.Method)
+		log.Println(c.Request.Header)
+		log.Println(c.Request.RemoteAddr)
 		return c.Render("static/index.html", rex.Map{})
 	})
 

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"slices"
-	"time"
 
 	"github.com/abiiranathan/rex"
 )
@@ -104,9 +103,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 			return next(c)
 		}
 
-		start := time.Now()
 		err := next(c)
-		latency := time.Since(start).String()
 
 		var logger *slog.Logger
 		switch l.Format {
@@ -120,7 +117,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 
 		args := []any{"status", c.StatusCode()}
 		if l.Flags&LOG_LATENCY != 0 {
-			args = append(args, "latency", latency)
+			args = append(args, "latency", c.Latency().String())
 		}
 		args = append(args, "method", c.Request.Method, "path", c.Request.URL.Path)
 
