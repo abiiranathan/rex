@@ -41,12 +41,7 @@ func (g *Group) With(middlewares ...Middleware) *route {
 
 // GET request.
 func (g *Group) GET(path string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
-	regRoute := g.router.handle(http.MethodGet, g.prefix+path, handler, false, g.middlewares...)
-
-	// Register template map validator.
-	if g.router.templateRegistry != nil && len(validator) > 0 {
-		g.router.templateRegistry.Register(regRoute.prefix, validator[0])
-	}
+	g.router.handle(http.MethodGet, g.prefix+path, handler, false, g.middlewares...)
 }
 
 // POST request.

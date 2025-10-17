@@ -1391,7 +1391,6 @@ func TestTemplateContextValidation(t *testing.T) {
 	}
 
 	r := rex.NewRouter(options...)
-	r.SetTemplateRegistry(templateval.NewRegistry())
 
 	validator := templateval.NewValidator().
 		RequiredString("Title").
@@ -1420,7 +1419,6 @@ func TestTemplateContextValidation(t *testing.T) {
 
 	// Missing context values
 	r = rex.NewRouter(options...)
-	r.SetTemplateRegistry(templateval.NewRegistry())
 
 	// valid rendering
 	r.GET("/home_page", func(c *rex.Context) error {

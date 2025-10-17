@@ -27,11 +27,6 @@ func (r *Router) With(midleware ...Middleware) *route {
 // the rex.Map values during template rendering.
 func (r *route) GET(pattern string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
 	r.router.handle(http.MethodGet, r.prefix+pattern, handler, false, r.middlewares...)
-
-	// Register template map validator.
-	if r.router.templateRegistry != nil && len(validator) > 0 {
-		r.router.templateRegistry.Register(r.prefix, validator[0])
-	}
 }
 
 func (r *route) POST(pattern string, handler HandlerFunc) {

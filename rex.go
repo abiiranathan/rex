@@ -200,9 +200,6 @@ type Router struct {
 
 	// skipLog skips logging the request if it returns true
 	skipLog func(c *Context) bool
-
-	// Global template context validator
-	templateRegistry *templateval.TemplateRegistry
 }
 
 // Router option a function option for configuring the router.
@@ -257,7 +254,6 @@ func NewRouter(options ...RouterOption) *Router {
 		groups:             make(map[string]*Group),
 		globalMiddlewares:  []Middleware{},
 		validator:          validator.New(validator.WithRequiredStructEnabled()),
-		templateRegistry:   nil, // No validation be default
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: false,
 			Level:     slog.LevelError,
@@ -342,12 +338,6 @@ func (r *Router) RegisterValidation(tag string, fn validator.Func) error {
 // FuncCtx validation allowing context.Context validation support.
 func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) error {
 	return r.validator.RegisterValidationCtx(tag, fn, true)
-}
-
-// Set the template registry on the router.
-// If set to nil, all checks are turned off.
-func (r *Router) SetTemplateRegistry(registry *templateval.TemplateRegistry) {
-	r.templateRegistry = registry
 }
 
 // Set error handler for centralized error handling.
@@ -482,12 +472,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 
 // Common HTTP method handlers
 func (r *Router) GET(pattern string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
-	regRoute := r.handle(http.MethodGet, pattern, handler, false)
-
-	// Register template map validator.
-	if r.templateRegistry != nil && len(validator) > 0 {
-		r.templateRegistry.Register(regRoute.prefix, validator[0])
-	}
+	r.handle(http.MethodGet, pattern, handler, false)
 }
 
 func (r *Router) POST(pattern string, handler HandlerFunc) {
