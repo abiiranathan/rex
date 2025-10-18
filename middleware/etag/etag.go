@@ -88,6 +88,7 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 			})
 			err := next(c)
 			restore()
+
 			// Return error after restoring the response writer
 			if err != nil {
 				return err

@@ -18,3 +18,12 @@ func ParseBool(v string) bool {
 	v = strings.ToLower(v)
 	return v == "true" || v == "1" || v == "on"
 }
+
+// Returns the first element in slice if len(elems) > 0,
+// otherwise returns the default value.
+func First[T any](elems []T, def T) T {
+	if len(elems) > 0 {
+		return elems[0]
+	}
+	return def
+}

@@ -59,15 +59,15 @@ func New(opts ...CORSOptions) rex.Middleware {
 			c.Response.Header().Set("Access-Control-Allow-Origin", origin)
 
 			if len(options.AllowedMethods) > 0 {
-				c.Response.Header().Set("Access-Control-Allow-Methods", joinStrings(options.AllowedMethods))
+				c.Response.Header().Set("Access-Control-Allow-Methods", strings.Join(options.AllowedMethods, ", "))
 			}
 
 			if len(options.AllowedHeaders) > 0 {
-				c.Response.Header().Set("Access-Control-Allow-Headers", joinStrings(options.AllowedHeaders))
+				c.Response.Header().Set("Access-Control-Allow-Headers", strings.Join(options.AllowedHeaders, ", "))
 			}
 
 			if len(options.ExposedHeaders) > 0 {
-				c.Response.Header().Set("Access-Control-Expose-Headers", joinStrings(options.ExposedHeaders))
+				c.Response.Header().Set("Access-Control-Expose-Headers", strings.Join(options.ExposedHeaders, ", "))
 			}
 
 			if options.AllowCredentials {
@@ -91,8 +91,4 @@ func New(opts ...CORSOptions) rex.Middleware {
 			return next(c)
 		}
 	}
-}
-
-func joinStrings(s []string) string {
-	return strings.Join(s, ", ")
 }

@@ -15,8 +15,9 @@ import (
 var flashMessageStore sessions.Store
 
 const (
-	sessionName     = "flash_messages_session"
-	flashMessageKey = "flash_message"
+	sessionName      = "flash_messages_session"
+	flashMessageKey  = "flash_message"
+	flashMessageType = "flash_message_type"
 )
 
 // setFlashMessage sets a flash message for the given key
@@ -25,10 +26,7 @@ func setFlashMessage(c *rex.Context, key string, fm Flash) error {
 
 	sess.Values[key] = fm
 	err := sess.Save(c.Request, c.Response)
-	if err != nil {
-		return errors.WithMessage(err, "error saving session")
-	}
-	return nil
+	return errors.WithMessage(err, "error saving session")
 }
 
 func clearCookie(c *rex.Context) error {
@@ -82,7 +80,7 @@ const (
 func init() {
 	secret := securecookie.GenerateRandomKey(32)
 	store := sessions.NewCookieStore(secret)
-	store.Options.Secure = true   // Cookie is sent over HTTPS only
+	store.Options.Secure = false  // Send both on http & https
 	store.Options.HttpOnly = true // XSS protection. No access from JS
 	store.Options.MaxAge = 0      // Session cookie is deleted when browser is closed
 
@@ -112,10 +110,7 @@ func FlashMessage(c *rex.Context, message string, messageType ...FlashMessageTyp
 		Message: message,
 		Type:    m_type,
 	})
-	if err != nil {
-		return errors.WithMessage(err, "error setting flash message")
-	}
-	return nil
+	return errors.WithMessage(err, "error setting flash message")
 }
 
 // FlashMessageMiddleware is a middleware that sets the flash message in the context.
@@ -131,10 +126,9 @@ func FlashMessageMiddleware() rex.Middleware {
 			if strings.HasPrefix(accept, "text/html") || strings.HasPrefix(accept, "*/*") {
 				message, err := getFlashMessage(c, flashMessageKey)
 				if message.Message != "" && err == nil {
-					c.Set("flash_message", message.Message)
-					c.Set("flash_message_type", message.Type)
+					c.Set(flashMessageKey, message.Message)
+					c.Set(flashMessageType, message.Type)
 				}
-
 			}
 			return next(c)
 		}

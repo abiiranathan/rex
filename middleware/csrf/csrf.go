@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/abiiranathan/rex"
@@ -104,7 +103,6 @@ func validateCSRFToken(req *http.Request) bool {
 	// Retrieve the CSRF token from the cookie.
 	cookie, err := req.Cookie(cookieName)
 	if err != nil {
-		log.Println("CSRF token not found in cookie:", err)
 		return false
 	}
 
@@ -113,18 +111,10 @@ func validateCSRFToken(req *http.Request) bool {
 	if token == "" {
 		token = req.Header.Get("X-CSRF-Token")
 		if token == "" {
-			log.Println("CSRF token not found in form or headers")
 			return false
 		}
 	}
-
-	// Compare tokens.
-	if subtleCompare(token, cookie.Value) {
-		return true
-	}
-
-	log.Println("CSRF token mismatch")
-	return false
+	return subtleCompare(token, cookie.Value)
 }
 
 // subtleCompare performs a constant-time comparison of two strings to avoid timing attacks.

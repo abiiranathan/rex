@@ -319,11 +319,7 @@ func (c *Context) Locals() map[any]any {
 // Redirects the request to the given url.
 // Default status code is 303 (http.StatusSeeOther)
 func (c *Context) Redirect(url string, status ...int) error {
-	var statusCode = http.StatusSeeOther
-	if len(status) > 0 {
-		statusCode = status[0]
-	}
-	http.Redirect(c.Response, c.Request, url, statusCode)
+	http.Redirect(c.Response, c.Request, url, First(status, http.StatusSeeOther))
 	return nil
 }
 
@@ -474,6 +470,7 @@ func (c *Context) WrapWriter(fn func(http.ResponseWriter) http.ResponseWriter) (
 	if rw, ok := c.Response.(*ResponseWriter); ok {
 		return rw.Wrap(fn)
 	}
+
 	// Fallback: replace the response directly
 	old := c.Response
 	c.Response = fn(old)
