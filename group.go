@@ -2,8 +2,6 @@ package rex
 
 import (
 	"net/http"
-
-	"github.com/abiiranathan/templateval"
 )
 
 // Group is a collection of routes with a common prefix.
@@ -40,7 +38,7 @@ func (g *Group) With(middlewares ...Middleware) *route {
 }
 
 // GET request.
-func (g *Group) GET(path string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
+func (g *Group) GET(path string, handler HandlerFunc) {
 	g.router.handle(http.MethodGet, g.prefix+path, handler, false, g.middlewares...)
 }
 

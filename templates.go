@@ -113,39 +113,44 @@ var builderPool = sync.Pool{
 
 // renderTemplate renders the template with the given name and data.
 func (c *Context) renderTemplate(name string, data Map) error {
-	// Get a builder from the pool
-	builder := builderPool.Get().(*strings.Builder)
-	defer func() {
-		builder.Reset()
-		builderPool.Put(builder)
-	}()
-
 	// Add extension only if necessary
 	if filepath.Ext(name) == "" {
 		name += ".html"
 	}
 
-	// Execute the template into the pooled builder
-	if err := c.router.template.ExecuteTemplate(builder, name, data); err != nil {
-		return err
-	}
-
-	// Update the data map with the rendered content
-	data[c.router.contentBlock] = template.HTML(builder.String())
-
-	// Reset the builder for reuse
-	builder.Reset()
-
-	// Execute the base template
-	if err := c.router.template.ExecuteTemplate(builder, c.router.baseLayout, data); err != nil {
-		return err
-	}
-
 	c.SetHeader("Content-Type", "text/html")
 
-	// Write the final content
-	_, err := io.WriteString(c.Response, builder.String())
-	return err
+	if c.router.baseLayout != "" {
+		// Get a builder from the pool
+		builder := builderPool.Get().(*strings.Builder)
+
+		defer func() {
+			builder.Reset()
+			builderPool.Put(builder)
+		}()
+
+		// Execute the template into the pooled builder
+		if err := c.router.template.ExecuteTemplate(builder, name, data); err != nil {
+			return err
+		}
+
+		// Update the data map with the rendered content
+		data[c.router.contentBlock] = template.HTML(builder.String())
+
+		// Reset the builder for reuse
+		builder.Reset()
+
+		// Execute the base template
+		if err := c.router.template.ExecuteTemplate(builder, c.router.baseLayout, data); err != nil {
+			return err
+		}
+
+		// Write the final content
+		_, err := io.WriteString(c.Response, builder.String())
+		return err
+	} else {
+		return c.router.template.ExecuteTemplate(c.Response, name, data)
+	}
 }
 
 // Render the template tmpl with the data. If no template is configured, Render will panic.
@@ -158,7 +163,7 @@ func (c *Context) Render(name string, data Map) error {
 	}
 
 	// pass the request context to the views
-	if c.router.passContextToViews && c.router.baseLayout != "" && c.router.contentBlock != "" {
+	if c.router.passContextToViews {
 		for k, v := range c.locals {
 			data[fmt.Sprintf("%v", k)] = v
 		}

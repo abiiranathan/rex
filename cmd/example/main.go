@@ -27,8 +27,6 @@ func main() {
 		panic(err)
 	}
 
-	log.Println(t.DefinedTemplates())
-
 	// Create a new router
 	rex.NoTrailingSlash = true
 	rex.ServeMinified = true
@@ -36,7 +34,6 @@ func main() {
 	mux := rex.NewRouter(
 		rex.WithTemplates(t),
 		rex.PassContextToViews(true),
-		rex.BaseLayout("static/index.html"),
 		rex.ContentBlock("Content"),
 	)
 
@@ -74,11 +71,6 @@ func main() {
 	})
 
 	mux.GET("/", func(c *rex.Context) error {
-		log.Println("Rendering index.html")
-		log.Println(c.Request.URL.Path)
-		log.Println(c.Request.Method)
-		log.Println(c.Request.Header)
-		log.Println(c.Request.RemoteAddr)
 		return c.Render("static/index.html", rex.Map{})
 	})
 

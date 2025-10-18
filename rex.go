@@ -40,7 +40,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abiiranathan/templateval"
 	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
@@ -314,14 +313,9 @@ func NewRouter(options ...RouterOption) *Router {
 		option(r)
 	}
 
-	if r.template != nil && r.baseLayout == "" {
-		panic("baseLayout is required when templates are set")
+	if r.template != nil && r.baseLayout != "" && r.contentBlock == "" {
+		panic("contentBlock is required when using a base layout")
 	}
-
-	if r.template != nil && r.contentBlock == "" {
-		panic("contentBlock is required when templates are set")
-	}
-
 	return r
 }
 
@@ -471,7 +465,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 }
 
 // Common HTTP method handlers
-func (r *Router) GET(pattern string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
+func (r *Router) GET(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodGet, pattern, handler, false)
 }
 

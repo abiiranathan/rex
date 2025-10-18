@@ -2,8 +2,6 @@ package rex
 
 import (
 	"net/http"
-
-	"github.com/abiiranathan/templateval"
 )
 
 type route struct {
@@ -25,7 +23,7 @@ func (r *Router) With(midleware ...Middleware) *route {
 // Register /GET method on pattern.
 // You can optionally pass a custom validator to validate
 // the rex.Map values during template rendering.
-func (r *route) GET(pattern string, handler HandlerFunc, validator ...*templateval.TemplateValidator) {
+func (r *route) GET(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodGet, r.prefix+pattern, handler, false, r.middlewares...)
 }
 

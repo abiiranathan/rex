@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/abiiranathan/rex"
-	"github.com/abiiranathan/templateval"
 )
 
 func TestRouterServeHTTP(t *testing.T) {
@@ -1363,77 +1362,4 @@ func TestRequestsPerSecond(t *testing.T) {
 	t.Logf("Total time: %s", result.T)
 	t.Logf("Memory allocations: %d", result.AllocsPerOp())
 	t.Logf("Bytes allocated per op: %d", result.AllocedBytesPerOp())
-}
-
-func TestTemplateContextValidation(t *testing.T) {
-	templ, err := rex.ParseTemplates(
-		"cmd/server/templates",
-		template.FuncMap{"upper": strings.ToUpper},
-		".html",
-	)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type User struct {
-		Name  string
-		Email string
-	}
-
-	user := User{"Abiira", "john@gmail.com"}
-
-	options := []rex.RouterOption{
-		rex.BaseLayout("base.html"),
-		rex.WithTemplates(templ),
-		rex.PassContextToViews(true),
-		rex.ContentBlock("Content"),
-	}
-
-	r := rex.NewRouter(options...)
-
-	validator := templateval.NewValidator().
-		RequiredString("Title").
-		RequiredString("Body").
-		RequiredInt("ContextValue").
-		RequiredPointer("user", reflect.TypeOf(user))
-
-	// valid rendering
-	r.GET("/home_page", func(c *rex.Context) error {
-		c.Set("ContextValue", 100)
-
-		return c.Render("home.html", rex.Map{
-			"Title": "Home Page",
-			"Body":  "Welcome to the home page",
-			"user":  &user,
-		})
-	}, validator)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/home_page", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d: Error=%s", w.Code, w.Body.String())
-	}
-
-	// Missing context values
-	r = rex.NewRouter(options...)
-
-	// valid rendering
-	r.GET("/home_page", func(c *rex.Context) error {
-		return c.Render("home.html", rex.Map{
-			"Title": "Home Page",
-			"Body":  "Welcome to the home page",
-		})
-	}, validator)
-
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("GET", "/home_page", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected status 500, got %d: Error=%s", w.Code, w.Body.String())
-	}
-
 }
