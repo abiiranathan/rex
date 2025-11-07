@@ -319,6 +319,7 @@ func (c *Context) Locals() map[any]any {
 // Redirects the request to the given url.
 // Default status code is 303 (http.StatusSeeOther)
 func (c *Context) Redirect(url string, status ...int) error {
+	log.Printf("Redirecting after writing %d bytes\n", c.Response.(*ResponseWriter).BytesWritten())
 	http.Redirect(c.Response, c.Request, url, First(status, http.StatusSeeOther))
 	return nil
 }
