@@ -89,11 +89,9 @@ func (c *Context) renderErrorTemplate(err error, status ...int) error {
 		return c.renderTemplate(c.router.errorTemplate, Map{
 			"status":      statusCode,
 			"status_text": http.StatusText(statusCode),
-			"error":       err,
+			"error":       err.Error(),
 		})
-
 	}
-
 	_, err = c.Write([]byte(err.Error()))
 	return err
 

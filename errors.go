@@ -1,88 +1,167 @@
 package rex
 
 import (
+	"fmt"
 	"net/http"
-	"strings"
 )
 
-// Interface that allows for rex to call user-defined functions with errors
-// returns from handlers.
+// Error defines a structured error for use within Rex.
+type Error struct {
+	Code           int               `json:"-"` // HTTP status code for the error
+	Message        string            `json:"-"` // General error message, can be translated
+	Fields         map[string]string `json:"-"` // Field-specific validation errors
+	FormKind       FormErrorKind     `json:"-"` // Specific kind of form error
+	FormField      string            `json:"-"` // Name of the form field that caused the error
+	WrappedError   error             `json:"-"` // Original error for internal logging/debugging
+	TranslationKey string            `json:"-"` // Key for looking up translated messages
+}
+
+// ErrorResponse represents the uniform JSON error response structure.
+type ErrorResponse struct {
+	Error ErrorDetail `json:"error"`
+}
+
+// ErrorDetail contains the actual error information.
+type ErrorDetail struct {
+	Message    string            `json:"message"`              // Human-readable error message
+	Code       string            `json:"code,omitempty"`       // Error code for programmatic handling
+	Details    map[string]any    `json:"details,omitempty"`    // Additional error context
+	Validation *ValidationDetail `json:"validation,omitempty"` // Validation-specific errors
+	Form       *FormDetail       `json:"form,omitempty"`       // Form-specific errors
+}
+
+// ValidationDetail contains field-level validation errors.
+type ValidationDetail struct {
+	Fields map[string]string `json:"fields"` // Field name -> error message
+}
+
+// FormDetail contains form-specific error information.
+type FormDetail struct {
+	Kind  FormErrorKind `json:"kind"`            // Type of form error
+	Field string        `json:"field,omitempty"` // Field that caused the error
+}
+
+// Error makes Error implement the error interface.
+func (e *Error) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+
+	// Prioritize form errors if present
+	if e.FormKind != "" {
+		msg := fmt.Sprintf("Form error: Kind=%s", e.FormKind)
+		if e.FormField != "" {
+			msg = fmt.Sprintf("%s, Field=%s", msg, e.FormField)
+		}
+		if e.WrappedError != nil {
+			msg = fmt.Sprintf("%s, Err=%s", msg, e.WrappedError.Error())
+		}
+		return msg
+	}
+
+	if e.WrappedError != nil {
+		return e.WrappedError.Error()
+	}
+	return "An unexpected error occurred"
+}
+
+// ToResponse converts the Error to a uniform ErrorResponse structure.
+func (e *Error) ToResponse() ErrorResponse {
+	detail := ErrorDetail{Message: e.Error()}
+
+	// Add validation details if present
+	if len(e.Fields) > 0 {
+		detail.Validation = &ValidationDetail{
+			Fields: e.Fields,
+		}
+	}
+
+	// Add form details if present
+	if e.FormKind != "" {
+		detail.Form = &FormDetail{
+			Kind:  e.FormKind,
+			Field: e.FormField,
+		}
+	}
+
+	return ErrorResponse{Error: detail}
+}
+
+// ValidationErr creates a new validation error.
+func ValidationErr(fields map[string]string) *Error {
+	return &Error{
+		Code:    http.StatusBadRequest,
+		Message: "Validation failed",
+		Fields:  fields,
+	}
+}
+
+// FormErr creates a new form error.
+func FormErr(formErr FormError) *Error {
+	return &Error{
+		Code:         http.StatusBadRequest,
+		Message:      formErr.Err.Error(),
+		FormKind:     formErr.Kind,
+		FormField:    formErr.Field,
+		WrappedError: formErr.Err,
+	}
+}
+
+// NewError creates a new generic error with a given message and optional status code.
+func NewError(code int, message string) *Error {
+	return &Error{
+		Code:    code,
+		Message: message,
+	}
+}
+
+// NewErrorWrap creates a new generic error wrapping an existing error.
+func NewErrorWrap(code int, message string, err error) *Error {
+	return &Error{
+		Code:         code,
+		Message:      message,
+		WrappedError: err,
+	}
+}
+
+// ErrorHandler interface allows for custom error handling.
 type ErrorHandler interface {
-	// Passes translated validation errors in map[string]string.
-	// The keys are field names. Values are the error messages.
-	ValidationErrors(c *Context, errs map[string]string)
-
-	// Passes FormError as a result of calling c.BodyParser() when parsing the form.
-	FormErrors(c *Context, err FormError)
-
-	// Generic errors that are not ValidationErrors or FormErrors are passed here
-	// to the caller.
-	GenericErrors(c *Context, err error)
+	Handle(c *Context, err error)
 }
 
 type errorHandler struct{}
 
-func writeHtmlError(c *Context, errs map[string]string) {
-	var htmlReply strings.Builder
-	htmlReply.WriteString(`<div class="rex_error">`)
-	for _, value := range errs {
-		htmlReply.WriteString(`<p class="rex_error_item">`)
-		htmlReply.WriteString(value)
-		htmlReply.WriteString("</p>")
+func (*errorHandler) Handle(c *Context, err error) {
+	rexErr, ok := err.(*Error)
+	if !ok {
+		rexErr = &Error{
+			Code:         http.StatusInternalServerError,
+			Message:      "Internal server error",
+			WrappedError: err,
+		}
 	}
-	htmlReply.WriteString("</div>")
-	_ = c.HTML(htmlReply.String())
-}
 
-func (*errorHandler) ValidationErrors(c *Context, errs map[string]string) {
-	accept := c.AcceptHeader()
-	contentType := c.ContentType()
-	c.WriteHeader(http.StatusBadRequest)
-	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
-		_ = c.JSON(errs)
-	} else {
-		writeHtmlError(c, errs)
-	}
-}
-
-func (*errorHandler) FormErrors(c *Context, err FormError) {
-	accept := c.AcceptHeader()
-	contentType := c.ContentType()
-
-	c.WriteHeader(http.StatusBadRequest)
-
-	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
-		_ = c.JSON(err)
-	} else {
-		var htmlReply strings.Builder
-		htmlReply.WriteString(`<div class="rex_error">`)
-		htmlReply.WriteString(`<p class="rex_error_item">`)
-		htmlReply.WriteString(err.Err.Error())
-		htmlReply.WriteString("</p>")
-		htmlReply.WriteString("</div>")
-		_ = c.HTML(htmlReply.String())
-	}
-}
-
-func (*errorHandler) GenericErrors(ctx *Context, err error) {
-	statusCode := ctx.StatusCode()
-	if statusCode <= http.StatusBadRequest {
+	statusCode := rexErr.Code
+	if statusCode == 0 {
 		statusCode = http.StatusInternalServerError
 	}
 
-	accept := ctx.AcceptHeader()
-	contentType := ctx.ContentType()
+	accept := c.AcceptHeader()
+	contentType := c.ContentType()
+
+	c.WriteHeader(statusCode)
 
 	if accept == ContentTypeJSON || contentType == ContentTypeJSON {
-		ctx.WriteHeader(statusCode)
-		_ = ctx.JSON(Map{"error": err.Error()})
+		// Always return uniform error response structure
+		c.JSON(rexErr.ToResponse())
 	} else {
-		isHtmx := ctx.Request.Header.Get("HX-Request") == "true"
-		if isHtmx || ctx.router.errorTemplate == "" {
-			ctx.WriteHeader(statusCode)
-			_, _ = ctx.Write([]byte(err.Error()))
+		// HTML response when there is no error template or htmx request
+		isHtmx := c.Request.Header.Get("HX-Request") == "true"
+		if isHtmx || c.router.errorTemplate == "" {
+			c.Write([]byte(rexErr.Error()))
 		} else {
-			_ = ctx.RenderError(ctx.Response, err, statusCode)
+			// Render error using the configured template
+			c.RenderError(c.Response, rexErr, statusCode)
 		}
 	}
 }

@@ -272,7 +272,7 @@ func NewRouter(options ...RouterOption) *Router {
 			AddSource: false,
 			Level:     slog.LevelError,
 		})),
-		errHandler: defaultErrorHandler, // Global error handler functions
+		errHandler: defaultErrorHandler,
 		errorHandlerFunc: func(c *Context, err error) {
 			// Log the error on exit to ensure that the correct status code is set.
 			defer func() {
@@ -285,11 +285,14 @@ func NewRouter(options ...RouterOption) *Router {
 				if err != nil {
 					args = append(args, "error", err.Error())
 				}
+
 				args = append(args, "latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path())
+
 				if c.router.loggerCallback != nil {
 					userArgs := c.router.loggerCallback(c)
 					args = append(args, userArgs...)
 				}
+
 				c.router.logger.Debug("", args...)
 			}()
 
@@ -298,17 +301,21 @@ func NewRouter(options ...RouterOption) *Router {
 				return
 			}
 
+			var rexErr *Error
 			if ve, ok := err.(validator.ValidationErrors); ok {
-				c.router.errHandler.ValidationErrors(c, c.TranslateErrors(ve))
-				return
+				rexErr = ValidationErr(c.TranslateErrors(ve))
+			} else if fe, ok := err.(FormError); ok {
+				rexErr = FormErr(fe)
+			} else {
+				// For generic errors, wrap it in our new Error struct.
+				// Use existing status code from context if it's an error status, otherwise default to 500.
+				var defaultStatusCode = http.StatusInternalServerError
+				if c.StatusCode() >= http.StatusBadRequest && c.StatusCode() <= http.StatusNetworkAuthenticationRequired {
+					defaultStatusCode = c.StatusCode()
+				}
+				rexErr = &Error{Code: defaultStatusCode, WrappedError: err}
 			}
-
-			if fe, ok := err.(FormError); ok {
-				c.router.errHandler.FormErrors(c, fe)
-				return
-			}
-
-			c.router.errHandler.GenericErrors(c, err)
+			c.router.errHandler.Handle(c, rexErr)
 		},
 	}
 
