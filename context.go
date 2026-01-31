@@ -31,6 +31,19 @@ type Context struct {
 	latency      time.Duration       // Request latency tracked by router
 }
 
+// NewContext creates a new Context instance for the given request and response.
+// This is primarily useful for testing but can also be used when manually
+// creating contexts outside of the normal routing flow.
+func NewContext(w http.ResponseWriter, r *http.Request, router *Router) *Context {
+	return &Context{
+		Request:  r,
+		Response: w,
+		ctx:      r.Context(),
+		router:   router,
+		locals:   make(map[string]any),
+	}
+}
+
 // Implement context.Context interface
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	if c.ctx == nil {
