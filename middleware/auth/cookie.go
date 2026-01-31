@@ -8,7 +8,6 @@ package auth
 import (
 	"context"
 	"encoding/gob"
-	"log"
 	"net/http"
 	"time"
 
@@ -139,6 +138,18 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 
 			session, err := store.Get(c.Request, sessionName)
 			if err != nil {
+				// fmt.Printf("Suspected Key rotation detected... Deleting old cookie...\n")
+				// Expire the cookie if decoding fails (e.g. invalid signature due to key rotation)
+				http.SetCookie(c.Response, &http.Cookie{
+					Name:     sessionName,
+					Path:     config.Options.Path,
+					Domain:   config.Options.Domain,
+					MaxAge:   -1,
+					Expires:  time.Unix(1, 0),
+					HttpOnly: config.Options.HttpOnly,
+					Secure:   config.Options.Secure,
+					SameSite: config.Options.SameSite,
+				})
 				return handleError()
 			}
 
@@ -177,27 +188,32 @@ func CookieValue(c *rex.Context) (state any) {
 
 // ClearAuthState deletes authentication state.
 func ClearAuthState(c *rex.Context) {
-	session, _ := store.Get(c.Request, rexSessionName)
-	if session.IsNew {
+	if store == nil {
 		return
 	}
 
+	session, _ := store.Get(c.Request, rexSessionName)
+	// Clear values
 	for k := range session.Values {
 		delete(session.Values, k)
 	}
 
-	cookie, err := c.Request.Cookie(rexSessionName)
-	if err != nil {
-		log.Println(err)
-		return
+	// We expire the cookie explicitly using the store options to match Path and Domain
+	options := store.Options
+	if options == nil {
+		options = &sessions.Options{Path: "/"}
 	}
 
-	cookie.MaxAge = -1
-	http.SetCookie(c.Response, cookie)
-
-	if err := session.Save(c.Request, c.Response); err != nil {
-		log.Println(err)
-	}
+	http.SetCookie(c.Response, &http.Cookie{
+		Name:     rexSessionName,
+		Path:     options.Path,
+		Domain:   options.Domain,
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: options.HttpOnly,
+		Secure:   options.Secure,
+		SameSite: options.SameSite,
+	})
 }
 
 // Returns true if Cookie auth was authentication was skipped.
