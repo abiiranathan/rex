@@ -344,13 +344,13 @@ func TestRouterMiddleware(t *testing.T) {
 	r := rex.NewRouter()
 	r.Use(func(hf rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			c.Set(authContextKey, "johndoe")
+			c.Set(string(authContextKey), "johndoe")
 			return hf(c)
 		}
 	})
 
 	r.GET("/middleware", func(c *rex.Context) error {
-		auth, ok := c.Get(authContextKey)
+		auth, ok := c.Get(string(authContextKey))
 		if !ok {
 			c.WriteHeader(http.StatusUnauthorized)
 			return c.String("no auth")
@@ -497,37 +497,37 @@ func TestRouterChainMiddleware(t *testing.T) {
 
 	r.Use(func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			c.Set(msgKey, "first")
+			c.Set(string(msgKey), "first")
 			return next(c)
 		}
 	})
 
 	r.Use(func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			message, ok := c.Get(msgKey)
+			message, ok := c.Get(string(msgKey))
 			if !ok {
 				c.WriteHeader(http.StatusInternalServerError)
 				return c.String("no message")
 			}
 
-			c.Set(msgKey, message.(string)+" second")
+			c.Set(string(msgKey), message.(string)+" second")
 			return next(c)
 		}
 	})
 
 	r.With(func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			message, ok := c.Get(msgKey)
+			message, ok := c.Get(string(msgKey))
 			if !ok {
 				c.WriteHeader(http.StatusInternalServerError)
 				return c.String("no message")
 			}
 
-			c.Set(msgKey, message.(string)+" third")
+			c.Set(string(msgKey), message.(string)+" third")
 			return next(c)
 		}
 	}).GET("/chain", func(c *rex.Context) error {
-		message, ok := c.Get(msgKey)
+		message, ok := c.Get(string(msgKey))
 		if !ok {
 			c.WriteHeader(http.StatusInternalServerError)
 			return c.String("no message")

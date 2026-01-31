@@ -25,13 +25,10 @@ type etagResponseWriter struct {
 
 func (e *etagResponseWriter) WriteHeader(code int) {
 	if e.written {
-		return // Prevent multiple calls
+		return
 	}
 	e.status = code
 	e.written = true
-
-	// Don't call e.ResponseWriter.WriteHeader(code) yet for 200 OK
-	// For non-200, we should write through immediately
 	if code != http.StatusOK {
 		e.ResponseWriter.WriteHeader(code)
 	}
@@ -43,12 +40,10 @@ func (e *etagResponseWriter) Write(p []byte) (int, error) {
 		e.written = true
 	}
 
-	// If status is not 200, write directly to the underlying response writer
 	if e.status != http.StatusOK {
 		return e.ResponseWriter.Write(p)
 	}
 
-	// For 200 OK, buffer the response
 	return e.w.Write(p)
 }
 
@@ -69,8 +64,6 @@ func (e *etagResponseWriter) Status() int {
 	return e.status
 }
 
-// Create a new etag middleware.
-// The middleware will ignore Server-Sent events and websocket requests by default.
 func New(skip ...func(r *http.Request) bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -86,12 +79,10 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 				skipEtag = true
 			}
 
-			// Skip WebSocket upgrade requests
 			if strings.EqualFold(c.GetHeader("Upgrade"), "websocket") {
 				skipEtag = true
 			}
 
-			// Skip Server-Sent Events (SSE) requests
 			if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
 				skipEtag = true
 			}
@@ -114,42 +105,37 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 			})
 
 			err := next(c)
-			restore()
+			restore() // Restore c.Response to original
 
-			// Return error after restoring the response writer
 			if err != nil {
 				return err
 			}
 
-			// If status is not 200 OK, the response was already written through
 			if ew.status != http.StatusOK {
 				return nil
 			}
 
-			// For 200 OK responses, apply ETag logic
 			etag := fmt.Sprintf(`"%x"`, ew.hash.Sum(nil))
 			c.SetHeader("ETag", etag)
 
-			// Check If-None-Match
 			ifNoneMatch := c.GetHeader("If-None-Match")
 			if ifNoneMatch == etag {
 				c.WriteHeader(http.StatusNotModified)
 				return nil
 			}
 
-			// Check If-Match
 			ifMatch := c.GetHeader("If-Match")
 			if ifMatch != "" && ifMatch != etag {
 				c.WriteHeader(http.StatusPreconditionFailed)
 				return nil
 			}
 
-			// Write the buffered 200 OK response
-			// IMPORTANT: Write header first, then copy buffer to the ORIGINAL ResponseWriter
+			// Write buffered response to original writer
+			// Note: We need to write the header to the ORIGINAL writer now.
+			// ew.ResponseWriter is likely the original writer (or the one below etag).
 			ew.ResponseWriter.WriteHeader(http.StatusOK)
 			_, err = ew.buf.WriteTo(ew.ResponseWriter)
 			return err
 		}
 	}
-
 }

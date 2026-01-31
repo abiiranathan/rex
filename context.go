@@ -13,7 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -24,33 +23,59 @@ import (
 type Context struct {
 	Request      *http.Request       // Original Request object
 	Response     http.ResponseWriter // Wrapped Writer
+	ctx          context.Context     // Parent Context
 	router       *Router             // Instance of the Router.
-	locals       map[any]any         // Per-request context data
-	mu           sync.RWMutex        // Mutex for the locals map
+	locals       map[string]any      // Per-request context data
 	err          error               // Tracks any error encountered in middleware
 	currentRoute *route              // The current route.
 	latency      time.Duration       // Request latency tracked by router
 }
 
+// Implement context.Context interface
+func (c *Context) Deadline() (deadline time.Time, ok bool) {
+	if c.ctx == nil {
+		return time.Time{}, false
+	}
+	return c.ctx.Deadline()
+}
+
+func (c *Context) Done() <-chan struct{} {
+	if c.ctx == nil {
+		return nil
+	}
+	return c.ctx.Done()
+}
+
+func (c *Context) Err() error {
+	if c.ctx == nil {
+		return nil
+	}
+	return c.ctx.Err()
+}
+
+func (c *Context) Value(key any) any {
+	if k, ok := key.(string); ok {
+		if v, exists := c.locals[k]; exists {
+			return v
+		}
+	}
+	if c.ctx == nil {
+		return nil
+	}
+	return c.ctx.Value(key)
+}
+
 // SetHeader sets a header in the response
 func (c *Context) SetHeader(key, value string) {
-	if wrapped, ok := c.Response.(*ResponseWriter); ok {
-		wrapped.writer.Header().Set(key, value)
-	} else {
-		c.Response.Header().Set(key, value)
-	}
+	c.Response.Header().Set(key, value)
 }
 
 // DelHeader deletes a header in the response
 func (c *Context) DelHeader(key string) {
-	if wrapped, ok := c.Response.(*ResponseWriter); ok {
-		wrapped.writer.Header().Del(key)
-	} else {
-		c.Response.Header().Del(key)
-	}
+	c.Response.Header().Del(key)
 }
 
-// GetHeader returns the status code of the response
+// GetHeader returns the value of the request header
 func (c *Context) GetHeader(key string) string {
 	return c.Request.Header.Get(key)
 }
@@ -273,37 +298,34 @@ func (c *Context) QueryUInt(key string, defaults ...uint) uint {
 }
 
 // Set stores a value in the context
-func (c *Context) Set(key any, value any) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Context) Set(key string, value any) {
+	if c.locals == nil {
+		c.locals = make(map[string]any)
+	}
 	c.locals[key] = value
-
-	// Also set the value in the request context
-	ctx := context.WithValue(c.Request.Context(), key, value)
-	*c.Request = *c.Request.WithContext(ctx)
-
 }
 
 // Get retrieves a value from the context
-func (c *Context) Get(key any) (value any, exists bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+func (c *Context) Get(key string) (value any, exists bool) {
+	if c.locals == nil {
+		return nil, false
+	}
 	value, exists = c.locals[key]
 	return
 }
 
 // MustGet retrieves a value from the context or panics if the key does not exist.
-func (c *Context) MustGet(key any) any {
+func (c *Context) MustGet(key string) any {
 	value, exists := c.Get(key)
 	if !exists {
-		panic("key not found")
+		panic("key not found: " + key)
 	}
 	return value
 }
 
 // GetOrEmpty retrieves a value from the context or returns nil if the key does not exist.
 // This better when you want to type-cast the value to a specific type without checking for existence.
-func (c *Context) GetOrEmpty(key any) any {
+func (c *Context) GetOrEmpty(key string) any {
 	value, exists := c.Get(key)
 	if !exists {
 		return nil
@@ -312,14 +334,16 @@ func (c *Context) GetOrEmpty(key any) any {
 }
 
 // Locals returns the context values
-func (c *Context) Locals() map[any]any {
+func (c *Context) Locals() map[string]any {
+	if c.locals == nil {
+		c.locals = make(map[string]any)
+	}
 	return c.locals
 }
 
 // Redirects the request to the given url.
 // Default status code is 303 (http.StatusSeeOther)
 func (c *Context) Redirect(url string, status ...int) error {
-	log.Printf("Redirecting after writing %d bytes\n", c.Response.(*ResponseWriter).BytesWritten())
 	http.Redirect(c.Response, c.Request, url, First(status, http.StatusSeeOther))
 	return nil
 }
@@ -451,9 +475,8 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 func (c *Context) StatusCode() int {
 	if wrapped, ok := c.Response.(*ResponseWriter); ok {
 		return wrapped.StatusCode()
-	} else {
-		return http.StatusOK
 	}
+	return http.StatusOK
 }
 
 // Latency returns the duration of the request including the time it took to write the response,
@@ -468,11 +491,6 @@ func (c *Context) setLatency(d time.Duration) { c.latency = d }
 // WrapWriter applies a function to wrap the underlying writer safely
 // and returns a restore function to revert to the previous writer.
 func (c *Context) WrapWriter(fn func(http.ResponseWriter) http.ResponseWriter) (restore func()) {
-	if rw, ok := c.Response.(*ResponseWriter); ok {
-		return rw.Wrap(fn)
-	}
-
-	// Fallback: replace the response directly
 	old := c.Response
 	c.Response = fn(old)
 	return func() { c.Response = old }

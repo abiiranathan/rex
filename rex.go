@@ -76,14 +76,26 @@ type Map map[string]any
 // WrapHandler wraps an http.Handler to be used as a rex.HandlerFunc
 func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
 	return func(c *Context) error {
-		// copy over context values
-		for k, v := range c.locals {
-			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), k, v))
-		}
+		// Set the request context to the rex context (which implements context.Context)
+		// This allows handlers to access locals via the context interface if needed.
+		// Note: c.Request.Context() is c.ctx (parent).
+		// We wrap it so c is the context.
+		c.Request = c.Request.WithContext(c)
 
 		h.ServeHTTP(c.Response, c.Request)
 
 		// If an error was set in request context, return it
+		// We can access it directly from locals if it was set via SetError (which now uses locals)
+		// or check the fallback.
+		if v, exists := c.locals[string(contextErrorKey)]; exists {
+			if err, ok := v.(error); ok {
+				return err
+			}
+		}
+
+		// Check underlying context just in case
+		// Note: contextErrorKey is contextError(string).
+		// We use string(contextErrorKey) for locals map.
 		errValue := c.Request.Context().Value(contextErrorKey)
 		if err, isError := errValue.(error); isError {
 			return err
@@ -104,6 +116,11 @@ var contextErrorKey = contextError("context_error_key")
 // that is retrieved and passed down the rex.Context.
 // Useful for http handlers without access to rex.Context.
 func SetError(r *http.Request, err error) {
+	// If the context is already a *Context, set it directly in locals
+	if ctx, ok := r.Context().(*Context); ok {
+		ctx.Set(string(contextErrorKey), err)
+		return
+	}
 	*r = *r.WithContext(context.WithValue(r.Context(), contextErrorKey, err))
 }
 
@@ -123,32 +140,30 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 	return func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if c.router == nil {
-					c.router = router
-				}
+				c.router = router
 
-				restore := func() {}
-				if rw, ok := c.Response.(*ResponseWriter); ok {
-					// Avoid swapping to self which would cause recursion
-					if w != rw {
-						restore = rw.SwapUnderlying(w)
-					}
-				}
-				defer restore()
+				// The middleware receives 'w', which might be a wrapper around c.Response.
+				// We need to temporarily set c.Response to 'w' so that 'next' writes to the correct writer.
+				old := c.Response
+				c.Response = w
+				defer func() { c.Response = old }()
 
 				c.err = next(c)
 			})
 
 			handler = middleware(handler)
 
-			// Pass the underlying writer into the middleware chain so it can wrap it.
-			if rw, ok := c.Response.(*ResponseWriter); ok {
-				handler.ServeHTTP(rw.writer, c.Request)
-			} else {
-				handler.ServeHTTP(c.Response, c.Request)
-			}
+			// ServeHTTP with the CURRENT response writer.
+			// The middleware will wrap it and call our inner handler with the wrapped writer.
+			handler.ServeHTTP(c.Response, c.Request)
 
 			// If an error was set in request context, return it
+			if v, exists := c.locals[string(contextErrorKey)]; exists {
+				if err, ok := v.(error); ok {
+					return err
+				}
+			}
+
 			errValue := c.Request.Context().Value(contextErrorKey)
 			if err, isError := errValue.(error); isError {
 				return err
@@ -350,7 +365,7 @@ func (r *Router) Use(middlewares ...Middleware) {
 var ctxPool = sync.Pool{
 	New: func() any {
 		return &Context{
-			locals: make(map[any]any),
+			locals: make(map[string]any),
 		}
 	},
 }
@@ -375,6 +390,7 @@ func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context 
 		status: http.StatusOK,
 	}
 	c.router = r
+	c.ctx = req.Context() // Capture parent context
 	return c
 }
 
@@ -384,7 +400,11 @@ func (c *Context) reset() {
 	c.Response = nil
 	c.router = nil
 	c.currentRoute = nil
-	c.locals = make(map[any]any)
+	c.ctx = nil
+	// clear map but preserve capacity
+	for k := range c.locals {
+		delete(c.locals, k)
+	}
 }
 
 // handle registers a new route with the given path and handler
@@ -428,6 +448,9 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 
 		// Track the current route.
 		ctx.currentRoute = newRoute
+
+		// Inject rex.Context into the request so it's available downstream
+		ctx.Request = ctx.Request.WithContext(ctx)
 
 		var skipBody bool
 		if req.Method != method {

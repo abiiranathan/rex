@@ -59,20 +59,6 @@ func (w *ResponseWriter) Size() int {
 	return w.size
 }
 
-// SwapUnderlying replaces the underlying http.ResponseWriter with nw.
-// It returns a restore function that, when called, restores the previous writer.
-func (w *ResponseWriter) SwapUnderlying(nw http.ResponseWriter) (restore func()) {
-	old := w.writer
-	w.writer = nw
-	return func() { w.writer = old }
-}
-
-// Wrap applies a transformation to the current underlying writer and swaps to it.
-// It returns a restore function that, when called, restores the previous writer.
-func (w *ResponseWriter) Wrap(fn func(http.ResponseWriter) http.ResponseWriter) (restore func()) {
-	return w.SwapUnderlying(fn(w.writer))
-}
-
 // SetSkipBody toggles writing of response body (used for HEAD requests).
 func (w *ResponseWriter) SetSkipBody(enabled bool) { w.skipBody = enabled }
 

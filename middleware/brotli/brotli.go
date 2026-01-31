@@ -14,15 +14,29 @@ import (
 
 type brotliWriter struct {
 	http.ResponseWriter
-	bw *matchfinder.Writer
+	bw            *matchfinder.Writer
+	status        int
+	headerWritten bool
 }
 
 func (b *brotliWriter) WriteHeader(code int) {
-	b.ResponseWriter.Header().Del("Content-Length")
+	if b.headerWritten {
+		return
+	}
+	// Only set headers if we are actually writing the response
+	b.status = code
+	if code != http.StatusNoContent && code != http.StatusNotModified {
+		b.ResponseWriter.Header().Set("Content-Encoding", "br")
+		b.ResponseWriter.Header().Del("Content-Length")
+	}
 	b.ResponseWriter.WriteHeader(code)
+	b.headerWritten = true
 }
 
 func (b *brotliWriter) Write(p []byte) (int, error) {
+	if !b.headerWritten {
+		b.WriteHeader(http.StatusOK)
+	}
 	return b.bw.Write(p)
 }
 
@@ -53,19 +67,24 @@ func Brotli(skipPaths ...string) rex.Middleware {
 				return next(c)
 			}
 
-			c.SetHeader("Content-Encoding", "br")
-
-			// No content Length on compressed data.
-			c.DelHeader("Content-Length")
-
 			var bw *matchfinder.Writer
+			var wb *brotliWriter
+
 			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
 				bw = brotli.NewWriterV2(w, 7)
-				return &brotliWriter{ResponseWriter: w, bw: bw}
+				wb = &brotliWriter{ResponseWriter: w, bw: bw}
+				return wb
 			})
 
 			defer restore()
-			defer bw.Close()
+			defer func() {
+				if wb != nil && wb.headerWritten && (wb.status == http.StatusNoContent || wb.status == http.StatusNotModified) {
+					return
+				}
+				if bw != nil {
+					bw.Close()
+				}
+			}()
 
 			return next(c)
 		}

@@ -146,7 +146,7 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 				return handleError()
 			}
 
-			c.Set(sessionKey, session.Values[stateKey])
+			c.Set(string(sessionKey), session.Values[stateKey])
 			return next(c)
 		}
 	}
@@ -172,7 +172,7 @@ func SetAuthState(c *rex.Context, state any) error {
 
 // CookieValue returns the auth state for this request or nil if not logged in.
 func CookieValue(c *rex.Context) (state any) {
-	return c.GetOrEmpty(sessionKey)
+	return c.GetOrEmpty(string(sessionKey))
 }
 
 // ClearAuthState deletes authentication state.

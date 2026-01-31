@@ -14,22 +14,25 @@ import (
 type gzipWriter struct {
 	http.ResponseWriter
 	gw            *gzip.Writer
+	status        int
 	headerWritten bool
 }
 
 func (g *gzipWriter) WriteHeader(code int) {
-	if !g.headerWritten {
-		// Only set gzip headers when we actually write content
+	if g.headerWritten {
+		return
+	}
+	g.status = code
+	if code != http.StatusNoContent && code != http.StatusNotModified {
 		g.ResponseWriter.Header().Set("Content-Encoding", "gzip")
 		g.ResponseWriter.Header().Del("Content-Length")
-		g.headerWritten = true
 	}
+	g.headerWritten = true
 	g.ResponseWriter.WriteHeader(code)
 }
 
 func (g *gzipWriter) Write(p []byte) (int, error) {
 	if !g.headerWritten {
-		// Ensure headers are written before first write
 		g.WriteHeader(http.StatusOK)
 	}
 	return g.gw.Write(p)
@@ -54,35 +57,39 @@ func (g *gzipWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func Gzip(skipPaths ...string) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			// Skip if path is in skipPaths
 			for _, path := range skipPaths {
 				if strings.HasPrefix(c.Path(), path) {
 					return next(c)
 				}
 			}
 
-			// Skip if client doesn't accept gzip
 			if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
 				return next(c)
 			}
 
 			var (
 				gw      *gzip.Writer
+				wb      *gzipWriter
 				created bool
 			)
 			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
 				z, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
 				if err != nil {
-					// Fallback: do not wrap; keep original writer
 					return w
 				}
 				gw = z
 				created = true
-				return &gzipWriter{ResponseWriter: w, gw: z}
+				wb = &gzipWriter{ResponseWriter: w, gw: z}
+				return wb
 			})
 			defer restore()
 			if created {
-				defer gw.Close()
+				defer func() {
+					if wb != nil && wb.headerWritten && (wb.status == http.StatusNoContent || wb.status == http.StatusNotModified) {
+						return
+					}
+					gw.Close()
+				}()
 			}
 
 			return next(c)
@@ -109,13 +116,21 @@ func GzipLevel(level int, skipPaths ...string) rex.Middleware {
 			}
 
 			var gw *gzip.Writer
+			var wb *gzipWriter
+
 			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
 				z, _ := gzip.NewWriterLevel(w, level)
 				gw = z
-				return &gzipWriter{ResponseWriter: w, gw: z}
+				wb = &gzipWriter{ResponseWriter: w, gw: z}
+				return wb
 			})
 			defer restore()
-			defer gw.Close()
+			defer func() {
+				if wb != nil && wb.headerWritten && (wb.status == http.StatusNoContent || wb.status == http.StatusNotModified) {
+					return
+				}
+				gw.Close()
+			}()
 
 			return next(c)
 		}
