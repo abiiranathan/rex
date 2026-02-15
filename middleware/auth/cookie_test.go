@@ -147,3 +147,124 @@ func TestCookieMiddleware(t *testing.T) {
 	}
 
 }
+
+func TestCookieSlidingWindowRefresh(t *testing.T) {
+	secretKey := securecookie.GenerateRandomKey(32)
+	encryptionKey := securecookie.GenerateRandomKey(32)
+
+	auth.InitializeCookieStore([][]byte{secretKey, encryptionKey}, User{})
+
+	// Use a short MaxAge so we can reason about the threshold easily.
+	// refreshThreshold = maxAge / 2 = 4s
+	maxAge := 8
+
+	router := rex.NewRouter()
+	router.Use(auth.Cookie("rex_session_name", auth.CookieConfig{
+		Options: &sessions.Options{
+			MaxAge:   maxAge,
+			Secure:   false,
+			SameSite: http.SameSiteStrictMode,
+		},
+		ErrorHandler: errorCallback,
+		SkipAuth:     skipAuth,
+	}))
+
+	router.POST("/login", func(c *rex.Context) error {
+		err := auth.SetAuthState(c, User{"testuser", "testpass"})
+		if err != nil {
+			return err
+		}
+		return c.String("ok")
+	})
+
+	router.GET("/protected", func(c *rex.Context) error {
+		return c.String("ok")
+	})
+
+	// Helper: perform a request and return the cookies from the response.
+	doRequest := func(method, path string, reqCookies []string) *httptest.ResponseRecorder {
+		var req *http.Request
+		if method == http.MethodPost && path == "/login" {
+			form := url.Values{"username": {"testuser"}, "password": {"testpass"}}
+			req = httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		} else {
+			req = httptest.NewRequest(method, path, nil)
+		}
+		for _, c := range reqCookies {
+			req.Header.Add("Cookie", c)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	// Login and grab the initial cookie.
+	w := doRequest(http.MethodPost, "/login", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", w.Code)
+	}
+	cookies := w.Header()["Set-Cookie"]
+	if len(cookies) == 0 {
+		t.Fatal("no Set-Cookie header after login")
+	}
+	firstCookie := cookies[0]
+
+	// --- Invariant 1: No refresh before the threshold is crossed ---
+	// An immediate follow-up request should NOT produce a new Set-Cookie,
+	// because less than half of MaxAge has elapsed since the last save.
+	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if _, refreshed := w.Header()["Set-Cookie"]; refreshed {
+		t.Error("cookie was refreshed too early: no Set-Cookie should be issued before the threshold")
+	}
+
+	// --- Invariant 2: Cookie IS refreshed once the threshold has elapsed ---
+	// Sleep past the refresh threshold (maxAge/2 seconds).
+	time.Sleep(time.Duration(maxAge/2+1) * time.Second)
+
+	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after threshold sleep, got %d", w.Code)
+	}
+	refreshedCookies := w.Header()["Set-Cookie"]
+	if len(refreshedCookies) == 0 {
+		t.Fatal("cookie was NOT refreshed after the threshold elapsed: expected a new Set-Cookie header")
+	}
+	refreshedCookie := refreshedCookies[0]
+
+	if refreshedCookie == firstCookie {
+		t.Error("refreshed cookie is identical to original: session was not actually extended")
+	}
+
+	// --- Invariant 3: The refreshed cookie is still valid ---
+	w = doRequest(http.MethodGet, "/protected", []string{refreshedCookie})
+	if w.Code != http.StatusOK {
+		t.Fatalf("refreshed cookie rejected: expected 200, got %d", w.Code)
+	}
+
+	// --- Invariant 4: Original cookie remains valid until MaxAge is truly exhausted ---
+	// (It hasn't expired yet — only half the window elapsed so far.)
+	// This confirms the refresh extends the session rather than invalidating the old one.
+	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
+	if w.Code != http.StatusOK {
+		t.Fatalf("original cookie should still be valid before full MaxAge: got %d", w.Code)
+	}
+
+	// --- Invariant 5: Session expires if never refreshed ---
+	// Sleep until the original MaxAge is fully exhausted.
+	time.Sleep(time.Duration(maxAge/2+1) * time.Second)
+
+	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expired original cookie should be rejected: expected 401, got %d", w.Code)
+	}
+
+	// But the refreshed cookie should still work (its MaxAge was reset).
+	w = doRequest(http.MethodGet, "/protected", []string{refreshedCookie})
+	if w.Code != http.StatusOK {
+		t.Errorf("refreshed cookie should still be valid: expected 200, got %d", w.Code)
+	}
+}

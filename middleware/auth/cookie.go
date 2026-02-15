@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"encoding/gob"
+	"log"
 	"net/http"
 	"time"
 
@@ -18,16 +19,12 @@ import (
 
 // Context variables
 // =======================
-type (
-	cookieSkipped string
-	cookieSession string
-)
-
 const (
-	authSkipped = cookieSkipped("cookie_auth_skipped")
-	sessionKey  = cookieSession("cookie_session_key")
-	authKey     = "rex_authenticated"
-	stateKey    = "rex_auth_state"
+	authSkipped   = "cookie_auth_skipped"
+	sessionKey    = "cookie_session_key"
+	authKey       = "rex_authenticated"
+	stateKey      = "rex_auth_state"
+	lastAccessKey = "last_access"
 )
 
 var (
@@ -77,6 +74,7 @@ func InitializeCookieStore(keyPairs [][]byte, userType any) {
 
 	store = sessions.NewCookieStore(keyPairs...)
 	gob.Register(userType)
+	gob.Register(time.Time{})
 }
 
 // Cookie creates a new authentication middleware with the given configuration.
@@ -115,7 +113,7 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 		config.Options.HttpOnly = true
 		config.Options.SameSite = http.SameSiteStrictMode
 
-		if config.Options.MaxAge == 0 {
+		if config.Options.MaxAge <= 0 {
 			config.Options.MaxAge = int((24 * time.Hour).Seconds())
 		}
 
@@ -125,6 +123,9 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 	}
 
 	store.Options = config.Options
+
+	// Calculate the refresh threshold: refresh if less than half the MaxAge remains.
+	refreshThreshold := time.Duration(config.Options.MaxAge/2) * time.Second
 
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -138,7 +139,6 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 
 			session, err := store.Get(c.Request, sessionName)
 			if err != nil {
-				// fmt.Printf("Suspected Key rotation detected... Deleting old cookie...\n")
 				// Expire the cookie if decoding fails (e.g. invalid signature due to key rotation)
 				http.SetCookie(c.Response, &http.Cookie{
 					Name:     sessionName,
@@ -157,7 +157,33 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 				return handleError()
 			}
 
-			c.Set(string(sessionKey), session.Values[stateKey])
+			// --- Sliding window: refresh the cookie if it's getting old ---
+			now := time.Now()
+
+			lastAccess, ok := session.Values[lastAccessKey].(time.Time)
+			if !ok {
+				// Malformed session: no timestamp, treat as unauthenticated
+				return handleError()
+			}
+
+			// Enforce MaxAge server-side: reject sessions older than MaxAge
+			// The cookie store should do this but we want to be explicit.
+			sessionAge := now.Sub(lastAccess)
+			maxAge := time.Duration(config.Options.MaxAge) * time.Second
+			if sessionAge > maxAge {
+				return handleError()
+			}
+
+			// Sliding window: refresh only after half the window has elapsed
+			if sessionAge > refreshThreshold {
+				session.Values[lastAccessKey] = now
+				session.Options = config.Options
+				if err := session.Save(c.Request, c.Response); err != nil {
+					log.Println(err)
+				}
+			}
+
+			c.Set(sessionKey, session.Values[stateKey])
 			return next(c)
 		}
 	}
@@ -178,12 +204,13 @@ func SetAuthState(c *rex.Context, state any) error {
 
 	session.Values[authKey] = true
 	session.Values[stateKey] = state
+	session.Values[lastAccessKey] = time.Now()
 	return session.Save(c.Request, c.Response)
 }
 
 // CookieValue returns the auth state for this request or nil if not logged in.
 func CookieValue(c *rex.Context) (state any) {
-	return c.GetOrEmpty(string(sessionKey))
+	return c.GetOrEmpty(sessionKey)
 }
 
 // ClearAuthState deletes authentication state.

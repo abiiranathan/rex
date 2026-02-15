@@ -146,6 +146,7 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 				// We need to temporarily set c.Response to 'w' so that 'next' writes to the correct writer.
 				old := c.Response
 				c.Response = w
+				c.Request = r
 				defer func() { c.Response = old }()
 
 				c.err = next(c)
@@ -158,13 +159,19 @@ func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler)
 			handler.ServeHTTP(c.Response, c.Request)
 
 			// If an error was set in request context, return it
+			// We can access it directly from locals if it was set via SetError (which now uses locals)
+			// or check the fallback.
 			if v, exists := c.locals[string(contextErrorKey)]; exists {
 				if err, ok := v.(error); ok {
 					return err
 				}
 			}
 
+			// Check underlying context just in case
+			// Note: contextErrorKey is contextError(string).
+			// We use string(contextErrorKey) for locals map.
 			errValue := c.Request.Context().Value(contextErrorKey)
+
 			if err, isError := errValue.(error); isError {
 				return err
 			}
@@ -293,7 +300,11 @@ func NewRouter(options ...RouterOption) *Router {
 					args = append(args, userArgs...)
 				}
 
-				c.router.logger.Debug("", args...)
+				if err != nil {
+					c.router.logger.Error("", args...)
+				} else {
+					c.router.logger.Debug("", args...)
+				}
 			}()
 
 			// We must return early if there is no error.
