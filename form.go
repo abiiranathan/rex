@@ -17,7 +17,7 @@ import (
 const (
 	ContentTypeJSON          string = "application/json"
 	ContentTypeXML           string = "application/xml"
-	ContentTypeUrlEncoded    string = "application/x-www-form-urlencoded"
+	ContentTypeURLEncoded    string = "application/x-www-form-urlencoded"
 	ContentTypeMultipartForm string = "multipart/form-data"
 	ContentTypeHTML          string = "text/html"
 	ContentTypeCSV           string = "text/csv"
@@ -82,6 +82,7 @@ func (e FormError) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// DefaultTimezone is the default timezone used when parsing form and query time values.
 var DefaultTimezone = time.UTC
 
 // BodyParser parses the request body and stores the result in v.
@@ -130,7 +131,7 @@ func (c *Context) BodyParser(v any, loc ...*time.Location) error {
 			return err
 		}
 		return nil
-	} else if contentType == ContentTypeUrlEncoded || contentType == ContentTypeMultipartForm {
+	} else if contentType == ContentTypeURLEncoded || contentType == ContentTypeMultipartForm {
 		var form *multipart.Form
 		var err error
 		if contentType == ContentTypeMultipartForm {
@@ -646,19 +647,8 @@ func (c *Context) QueryParser(v any, tag ...string) error {
 	return nil
 }
 
-// Parse time from string using specified timezone. If timezone is nil,
-// UTC is used. Supported time formats are tried in order.
-/*
-	timeFormats := []string{
-		time.RFC3339,                    // "2006-01-02T15:04:05Z07:00" (default go time)
-		"2006-01-02T15:04:05.000Z07:00", // RFC 3339 format with milliseconds and a UTC timezone offset(JSON)
-		"2006-01-02T15:04",              // HTML datetime-local format without seconds
-		"2006-01-02T15:04:05",           // "2006-01-02T15:04:05"
-		time.DateTime,                   // Custom format for "YYYY-MM-DD HH:MM:SS"
-		time.DateOnly,                   // "2006-01-02" (html date format)
-		time.TimeOnly,                   // "HH:MM:SS" (html time format)
-	}
-*/
+// ParseTime parses a time string using the provided timezone.
+// If timezone is nil, DefaultTimezone is used. Supported time formats are tried in order.
 func ParseTime(v string, timezone *time.Location) (time.Time, error) {
 	// Define a list of time formats to try
 	timeFormats := []string{

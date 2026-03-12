@@ -8,9 +8,9 @@ import (
 	"github.com/abiiranathan/rex"
 )
 
-// Basic Auth middleware.
-// If the username and password are not correct, a 401 status code is sent.
-// The realm is the realm to display in the login box. Default is "Restricted".
+// BasicAuth returns middleware that protects routes with HTTP Basic authentication.
+// If the credentials are invalid, it responds with status 401.
+// The default realm is "Restricted".
 func BasicAuth(username, password string, realm ...string) rex.Middleware {
 	defaultRealm := "Restricted"
 	if len(realm) > 0 {

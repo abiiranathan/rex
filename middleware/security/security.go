@@ -1,3 +1,4 @@
+// Package security provides security header middleware for rex routers.
 package security
 
 import (

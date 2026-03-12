@@ -169,7 +169,7 @@ func (c *Context) Render(name string, data Map) error {
 	return c.renderTemplate(name, data)
 }
 
-// Execute a standalone template without a layout.
+// ExecuteTemplate executes a standalone template without a layout.
 func (c *Context) ExecuteTemplate(name string, data Map) error {
 	if c.router.template == nil {
 		return fmt.Errorf("no template is configured: unable to render template %q", name)

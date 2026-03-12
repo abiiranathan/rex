@@ -103,7 +103,7 @@ func TestLogger_SkipIf(t *testing.T) {
 }
 
 func TestLogger_Flags_IP_UserAgent_Latency(t *testing.T) {
-	cfg := &Config{Format: TextFormat, Flags: LOG_IP | LOG_USERAGENT | LOG_LATENCY}
+	cfg := &Config{Format: TextFormat, Flags: LogIP | LogUserAgent | LogLatency}
 	r, buf := setupRouterWithLogger(t, cfg)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/hello", nil)

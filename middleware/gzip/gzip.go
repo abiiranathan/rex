@@ -1,3 +1,4 @@
+// Package gzip provides gzip compression middleware for rex routers.
 package gzip
 
 import (
@@ -18,6 +19,7 @@ type gzipWriter struct {
 	headerWritten bool
 }
 
+// WriteHeader writes the response status code and gzip headers.
 func (g *gzipWriter) WriteHeader(code int) {
 	if g.headerWritten {
 		return
@@ -31,6 +33,7 @@ func (g *gzipWriter) WriteHeader(code int) {
 	g.ResponseWriter.WriteHeader(code)
 }
 
+// Write compresses p and writes it to the underlying response.
 func (g *gzipWriter) Write(p []byte) (int, error) {
 	if !g.headerWritten {
 		g.WriteHeader(http.StatusOK)
@@ -38,6 +41,7 @@ func (g *gzipWriter) Write(p []byte) (int, error) {
 	return g.gw.Write(p)
 }
 
+// Flush flushes any buffered response data.
 func (g *gzipWriter) Flush() {
 	if g.gw != nil {
 		g.gw.Flush()
@@ -47,6 +51,7 @@ func (g *gzipWriter) Flush() {
 	}
 }
 
+// Hijack implements http.Hijacker when supported by the underlying writer.
 func (g *gzipWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := g.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
@@ -54,6 +59,7 @@ func (g *gzipWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("http.Hijacker interface is not supported")
 }
 
+// Gzip returns middleware that compresses responses with gzip when the client supports it.
 func Gzip(skipPaths ...string) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {

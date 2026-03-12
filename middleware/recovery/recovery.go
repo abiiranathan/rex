@@ -1,3 +1,4 @@
+// Package recovery provides panic recovery middleware for rex routers.
 package recovery
 
 import (
@@ -37,6 +38,7 @@ type Logger interface {
 // defaultLogger wraps the standard log package
 type defaultLogger struct{}
 
+// Printf logs recovery output using the standard library logger.
 func (d defaultLogger) Printf(format string, v ...any) {
 	log.Printf(format, v...)
 }

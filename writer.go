@@ -17,9 +17,9 @@ type ResponseWriter struct {
 	skipBody   bool                // If its a HEAD request, we should skip the body
 }
 
-// ResponseWriter interface
-func (rw *ResponseWriter) Header() http.Header {
-	return rw.writer.Header()
+// Header returns the response headers.
+func (w *ResponseWriter) Header() http.Header {
+	return w.writer.Header()
 }
 
 // WriteHeader writes the status code to the response.
@@ -51,10 +51,12 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 	return size, err
 }
 
+// Status returns the recorded HTTP status code.
 func (w *ResponseWriter) Status() int {
 	return w.status
 }
 
+// Size returns the number of bytes written to the response body.
 func (w *ResponseWriter) Size() int {
 	return w.size
 }
@@ -71,8 +73,7 @@ func (w *ResponseWriter) StatusCode() int { return w.status }
 // BytesWritten returns the number of bytes written to the body so far.
 func (w *ResponseWriter) BytesWritten() int { return w.size }
 
-// Implements the http.Flusher interface to allow an HTTP handler to flush buffered data to the client.
-// This is useful for chunked responses and server-sent events.
+// Flush implements http.Flusher for chunked responses and server-sent events.
 func (w *ResponseWriter) Flush() {
 	if f, ok := w.writer.(http.Flusher); ok {
 		f.Flush()
@@ -109,8 +110,7 @@ func (w *ResponseWriter) ReadFrom(r io.Reader) (n int64, err error) {
 	return
 }
 
-// Satisfy http.ResponseController support (Go 1.20+)
-// More about ResponseController: https://go.dev/ref/spec#ResponseController
+// Unwrap exposes the underlying http.ResponseWriter for http.ResponseController support.
 func (w *ResponseWriter) Unwrap() http.ResponseWriter {
 	return w.writer
 }

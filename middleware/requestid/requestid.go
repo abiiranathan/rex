@@ -1,3 +1,4 @@
+// Package requestid provides request ID middleware for rex routers.
 package requestid
 
 import (

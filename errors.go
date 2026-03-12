@@ -131,6 +131,7 @@ type ErrorHandler interface {
 
 type errorHandler struct{}
 
+// Handle writes the error response using the configured rex error format.
 func (*errorHandler) Handle(c *Context, err error) {
 	rexErr, ok := err.(*Error)
 	if !ok {

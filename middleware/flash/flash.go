@@ -1,3 +1,4 @@
+// Package flash provides flash message helpers and middleware for rex routers.
 package flash
 
 import (
@@ -68,6 +69,7 @@ type Flash struct {
 	Type    string // success, info, warning, error
 }
 
+// FlashMessageType identifies the Bootstrap-style severity used for a flash message.
 type FlashMessageType int
 
 const (
@@ -88,27 +90,27 @@ func init() {
 	gob.Register(Flash{})
 }
 
-// Helper fucntion to set a flash message in session.
-// default messageType is error.
+// FlashMessage stores a flash message in the session.
+// The default message type is MessageError.
 func FlashMessage(c *rex.Context, message string, messageType ...FlashMessageType) error {
-	m_type := "danger"
+	msgType := "danger"
 
 	if len(messageType) > 0 {
 		switch messageType[0] {
 		case MessageInfo:
-			m_type = "info"
+			msgType = "info"
 		case MessageSuccess:
-			m_type = "success"
+			msgType = "success"
 		case MessageWarning:
-			m_type = "warning"
+			msgType = "warning"
 		default:
-			m_type = "danger"
+			msgType = "danger"
 		}
 	}
 
 	err := setFlashMessage(c, flashMessageKey, Flash{
 		Message: message,
-		Type:    m_type,
+		Type:    msgType,
 	})
 	return errors.WithMessage(err, "error setting flash message")
 }

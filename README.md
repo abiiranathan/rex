@@ -1,6 +1,6 @@
 # rex
 
-<img src="./rex.webp" alt="logo" width="200"/>
+<img src="./rex.jpg" alt="logo" width="200"/>
 
 **rex** is a minimalistic but robust HTTP router built on Go 1.22’s enhanced `http.ServeMux`. It offers a range of features for rapid web application development, including:
 

@@ -1,3 +1,4 @@
+// Package sse provides server-sent events helpers for rex routers.
 package sse
 
 import (

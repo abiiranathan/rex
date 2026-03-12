@@ -1,3 +1,4 @@
+// Package logger provides request logging middleware for rex routers.
 package logger
 
 import (
@@ -12,6 +13,8 @@ import (
 
 // LogFormat is the format of the log output, compatible with the new slog package.
 type LogFormat int
+
+// LogFlags controls which request attributes are added to log output.
 type LogFlags int8
 
 const (
@@ -20,12 +23,13 @@ const (
 )
 
 const (
-	LOG_IP LogFlags = 1 << iota
-	LOG_LATENCY
-	LOG_USERAGENT
+	LogIP LogFlags = 1 << iota
+	LogLatency
+	LogUserAgent
 )
 
-const StdLogFlags LogFlags = LOG_LATENCY | LOG_IP
+// StdLogFlags is the default set of log fields included by the middleware.
+const StdLogFlags LogFlags = LogLatency | LogIP
 
 // Config is a middleware that logs the request and response information.
 type Config struct {
@@ -116,17 +120,17 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 		}
 
 		args := []any{"status", c.StatusCode()}
-		if l.Flags&LOG_LATENCY != 0 {
+		if l.Flags&LogLatency != 0 {
 			args = append(args, "latency", c.Latency().String())
 		}
 		args = append(args, "method", c.Request.Method, "path", c.Request.URL.Path)
 
-		if l.Flags&LOG_IP != 0 {
+		if l.Flags&LogIP != 0 {
 			ipAddr, _ := c.IP()
 			args = append(args, "ip", ipAddr)
 		}
 
-		if l.Flags&LOG_USERAGENT != 0 {
+		if l.Flags&LogUserAgent != 0 {
 			args = append(args, "user_agent", c.Request.UserAgent())
 		}
 

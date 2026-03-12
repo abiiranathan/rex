@@ -428,9 +428,9 @@ func TestSetFieldMultipartFormRequired(t *testing.T) {
 			t.Errorf("expected FormError, got %T", err)
 		}
 
-		var f_err FormError = err.(FormError)
-		if f_err.Kind != RequiredFieldMissing {
-			t.Errorf("expected FormError.Kind of RequiredFieldMissing, got %v", f_err.Kind)
+		var fErr = err.(FormError)
+		if fErr.Kind != RequiredFieldMissing {
+			t.Errorf("expected FormError.Kind of RequiredFieldMissing, got %v", fErr.Kind)
 		}
 
 		_, err = c.Write([]byte("OK"))

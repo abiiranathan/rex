@@ -18,14 +18,13 @@ import (
 //go:embed templates
 var viewsFS embed.FS
 
+// User represents the authenticated session user in the example server.
 type User struct {
 	Username string
 	Password string
 }
 
-// base.html is automatically added to every template.
-// {{ .Content }} is replaced with page contents.
-// No need for {{ template "base.html" . }} in every page.
+// HomeHandler renders the home page template.
 func HomeHandler(c *rex.Context) error {
 	return c.Render("templates/home.html", rex.Map{
 		"Title": "Home Page",
@@ -33,6 +32,7 @@ func HomeHandler(c *rex.Context) error {
 	})
 }
 
+// AboutHandler renders the about page template.
 func AboutHandler(c *rex.Context) error {
 	data := rex.Map{
 		"Title": "About Page",
@@ -41,11 +41,13 @@ func AboutHandler(c *rex.Context) error {
 	return c.Render("templates/about.html", data)
 }
 
+// NestedTemplate renders the nested doctor template.
 func NestedTemplate(c *rex.Context) error {
 	return c.Render("templates/doctor/doctor.html", rex.Map{})
 }
 
-func ApiHandler(c *rex.Context) error {
+// APIHandler returns example JSON data.
+func APIHandler(c *rex.Context) error {
 	todos := []struct {
 		Title     string
 		Completed bool
@@ -108,7 +110,8 @@ func logout(c *rex.Context) error {
 	return c.Redirect("/login")
 }
 
-func APiRoutes(c *rex.Context) error {
+// APIRoutes returns the registered routes as JSON.
+func APIRoutes(c *rex.Context) error {
 	return c.JSON(c.Router().RegisteredRoutes())
 }
 
@@ -144,8 +147,8 @@ func main() {
 
 	r.GET("/", HomeHandler)
 	r.GET("/about", AboutHandler)
-	r.GET("/api", ApiHandler)
-	r.GET("/api/routes", APiRoutes)
+	r.GET("/api", APIHandler)
+	r.GET("/api/routes", APIRoutes)
 	r.GET("/doctor", NestedTemplate)
 	r.GET("/protected", protectedHandler)
 	r.POST("/logout", logout)

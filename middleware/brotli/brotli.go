@@ -1,3 +1,4 @@
+// Package brotli provides Brotli compression middleware for rex routers.
 package brotli
 
 import (
@@ -19,6 +20,7 @@ type brotliWriter struct {
 	headerWritten bool
 }
 
+// WriteHeader writes the response status code and compression headers.
 func (b *brotliWriter) WriteHeader(code int) {
 	if b.headerWritten {
 		return
@@ -33,6 +35,7 @@ func (b *brotliWriter) WriteHeader(code int) {
 	b.headerWritten = true
 }
 
+// Write compresses p and writes it to the underlying response.
 func (b *brotliWriter) Write(p []byte) (int, error) {
 	if !b.headerWritten {
 		b.WriteHeader(http.StatusOK)
@@ -40,12 +43,14 @@ func (b *brotliWriter) Write(p []byte) (int, error) {
 	return b.bw.Write(p)
 }
 
+// Flush flushes any buffered response data.
 func (b *brotliWriter) Flush() {
 	if flusher, ok := b.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
 }
 
+// Hijack implements http.Hijacker when supported by the underlying writer.
 func (b *brotliWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := b.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()

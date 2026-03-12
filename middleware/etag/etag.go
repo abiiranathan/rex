@@ -1,3 +1,4 @@
+// Package etag provides ETag middleware for rex routers.
 package etag
 
 import (
@@ -23,6 +24,7 @@ type etagResponseWriter struct {
 	written             bool         // whether the header has been written
 }
 
+// WriteHeader records the response status code.
 func (e *etagResponseWriter) WriteHeader(code int) {
 	if e.written {
 		return
@@ -34,6 +36,7 @@ func (e *etagResponseWriter) WriteHeader(code int) {
 	}
 }
 
+// Write buffers the response body while updating the ETag hash.
 func (e *etagResponseWriter) Write(p []byte) (int, error) {
 	if !e.written {
 		e.status = http.StatusOK
@@ -47,12 +50,14 @@ func (e *etagResponseWriter) Write(p []byte) (int, error) {
 	return e.w.Write(p)
 }
 
+// Flush flushes the underlying response writer when supported.
 func (e *etagResponseWriter) Flush() {
 	if f, ok := e.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
+// Hijack implements http.Hijacker when supported by the underlying writer.
 func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := e.ResponseWriter.(http.Hijacker); ok {
 		return h.Hijack()
@@ -60,10 +65,12 @@ func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, http.ErrNotSupported
 }
 
+// Status returns the recorded HTTP status code.
 func (e *etagResponseWriter) Status() int {
 	return e.status
 }
 
+// New returns middleware that computes and validates ETag headers for cacheable responses.
 func New(skip ...func(r *http.Request) bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {

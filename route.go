@@ -11,7 +11,7 @@ type route struct {
 	router      *Router
 }
 
-// Assign middleware to route and return the route.
+// With creates a route builder with the provided middleware.
 func (r *Router) With(midleware ...Middleware) *route {
 	return &route{
 		middlewares: midleware,
@@ -20,30 +20,32 @@ func (r *Router) With(midleware ...Middleware) *route {
 	}
 }
 
-// Register /GET method on pattern.
-// You can optionally pass a custom validator to validate
-// the rex.Map values during template rendering.
+// GET registers a GET route on pattern.
 func (r *route) GET(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodGet, r.prefix+pattern, handler, false, r.middlewares...)
 }
 
+// POST registers a POST route on pattern.
 func (r *route) POST(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodPost, r.prefix+pattern, handler, false, r.middlewares...)
 }
 
+// PUT registers a PUT route on pattern.
 func (r *route) PUT(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodPut, r.prefix+pattern, handler, false, r.middlewares...)
 }
 
+// PATCH registers a PATCH route on pattern.
 func (r *route) PATCH(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodPatch, r.prefix+pattern, handler, false, r.middlewares...)
 }
 
+// DELETE registers a DELETE route on pattern.
 func (r *route) DELETE(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodDelete, r.prefix+pattern, handler, false, r.middlewares...)
 }
 
-// OPTIONS. This may not be necessary as registering GET request automatically registers OPTIONS.
+// OPTIONS registers an OPTIONS route on pattern.
 func (r *route) OPTIONS(pattern string, handler HandlerFunc) {
 	r.router.handle(http.MethodOptions, r.prefix+pattern, handler, false, r.middlewares...)
 }

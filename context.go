@@ -44,7 +44,7 @@ func NewContext(w http.ResponseWriter, r *http.Request, router *Router) *Context
 	}
 }
 
-// Implement context.Context interface
+// Deadline implements context.Context.
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	if c.ctx == nil {
 		return time.Time{}, false
@@ -52,6 +52,7 @@ func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	return c.ctx.Deadline()
 }
 
+// Done implements context.Context.
 func (c *Context) Done() <-chan struct{} {
 	if c.ctx == nil {
 		return nil
@@ -59,6 +60,7 @@ func (c *Context) Done() <-chan struct{} {
 	return c.ctx.Done()
 }
 
+// Err implements context.Context.
 func (c *Context) Err() error {
 	if c.ctx == nil {
 		return nil
@@ -66,6 +68,7 @@ func (c *Context) Err() error {
 	return c.ctx.Err()
 }
 
+// Value implements context.Context.
 func (c *Context) Value(key any) any {
 	if k, ok := key.(string); ok {
 		if v, exists := c.locals[k]; exists {
@@ -100,8 +103,7 @@ func (c *Context) Status(status int) *Context {
 	return c
 }
 
-// Context helper methods
-// JSON sends a JSON response
+// JSON sends a JSON response.
 func (c *Context) JSON(data any) error {
 	c.Response.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(c.Response).Encode(data)
@@ -120,13 +122,12 @@ func (c *Context) String(text string) error {
 	return err
 }
 
-// Returns the header content type stripping everything after ; like
-// charset or form boundary in multipart/form-data forms.
+// ContentType returns the request content type without parameters such as charset or multipart boundaries.
 func (c *Context) ContentType() string {
 	return strings.Split(c.Request.Header.Get("Content-Type"), ";")[0]
 }
 
-// Accepts returns the best match from the Accept header.
+// AcceptHeader returns the first media type from the Accept header.
 func (c *Context) AcceptHeader() string {
 	accept := c.Request.Header.Get("Accept")
 
@@ -134,13 +135,14 @@ func (c *Context) AcceptHeader() string {
 	return strings.Split(accept, ",")[0]
 }
 
-// Send HTML response.
+// HTML sends an HTML response.
 func (c *Context) HTML(html string) error {
 	c.Response.Header().Set("Content-Type", "text/html")
 	_, err := c.Response.Write([]byte(html))
 	return err
 }
 
+// WriteHeader writes the response status code.
 func (c *Context) WriteHeader(status int) {
 	c.Response.WriteHeader(status)
 }
@@ -190,7 +192,7 @@ func (c *Context) Param(name string) string {
 	return p
 }
 
-// paramInt returns the value of the parameter as an integer
+// ParamInt returns the value of the parameter as an integer.
 // If the parameter is not found, it checks the redirect options.
 func (c *Context) ParamInt(key string, defaults ...int) int {
 	v := c.Param(key)
@@ -259,7 +261,7 @@ func (c *Context) Query(key string, defaults ...string) string {
 	return v
 }
 
-// queryInt returns the value of the query as an integer
+// QueryInt returns the value of the query as an integer.
 func (c *Context) QueryInt(key string, defaults ...int) int {
 	v := c.Query(key)
 	if v == "" && len(defaults) > 0 {
@@ -276,7 +278,7 @@ func (c *Context) QueryInt(key string, defaults ...int) int {
 	return vInt
 }
 
-// queryInt returns the value of the query as an int64
+// QueryInt64 returns the value of the query as an int64.
 func (c *Context) QueryInt64(key string, defaults ...int64) int64 {
 	v := c.Query(key)
 	if v == "" && len(defaults) > 0 {
@@ -354,8 +356,8 @@ func (c *Context) Locals() map[string]any {
 	return c.locals
 }
 
-// Redirects the request to the given url.
-// Default status code is 303 (http.StatusSeeOther)
+// Redirect redirects the request to the given URL.
+// The default status code is 303 (http.StatusSeeOther).
 func (c *Context) Redirect(url string, status ...int) error {
 	http.Redirect(c.Response, c.Request, url, First(status, http.StatusSeeOther))
 	return nil
@@ -399,17 +401,17 @@ func (c *Context) IP() (string, error) {
 	return "", errors.New("IP not found")
 }
 
-// Returns English translated errors for validation errors in map[string]string.
+// TranslateErrors returns English translations for validation errors.
 func (c *Context) TranslateErrors(errs validator.ValidationErrors) map[string]string {
 	return errs.Translate(c.router.translator)
 }
 
-// Returns the form value by key.
+// FormValue returns the form value for key.
 func (c *Context) FormValue(key string) string {
 	return c.Request.FormValue(key)
 }
 
-// Returns the form value by key as an integer.
+// FormValueInt returns the form value for key as an integer.
 // If the value is not found or cannot be converted to an integer, it returns the default value.
 func (c *Context) FormValueInt(key string, defaults ...int) int {
 	v := c.FormValue(key)
@@ -427,7 +429,7 @@ func (c *Context) FormValueInt(key string, defaults ...int) int {
 	return vInt
 }
 
-// Returns the form value by key as an unsigned integer.
+// FormValueUInt returns the form value for key as an unsigned integer.
 // If the value is not found or cannot be converted to an unsigned integer, it returns the default value.
 func (c *Context) FormValueUInt(key string, defaults ...uint) uint {
 	v := c.FormValue(key)
@@ -445,10 +447,12 @@ func (c *Context) FormValueUInt(key string, defaults ...uint) uint {
 	return uint(vInt)
 }
 
+// FormFile returns the first uploaded file for key.
 func (c *Context) FormFile(key string) (multipart.File, *multipart.FileHeader, error) {
 	return c.Request.FormFile(key)
 }
 
+// FormFiles returns all uploaded files for key after parsing the multipart form.
 func (c *Context) FormFiles(key string, maxMemory ...int64) ([]*multipart.FileHeader, error) {
 	var memory int64 = 10 << 20 // 10 MB
 	if len(maxMemory) > 0 {
@@ -466,7 +470,7 @@ func (c *Context) FormFiles(key string, maxMemory ...int64) ([]*multipart.FileHe
 	return nil, fmt.Errorf("no files match the given key")
 }
 
-// save file from multipart form to disk
+// SaveFile saves a multipart file to target.
 func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 	src, err := fh.Open()
 	if err != nil {
@@ -484,7 +488,7 @@ func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 	return err
 }
 
-// Returns the status code of the response.
+// StatusCode returns the status code written to the response.
 func (c *Context) StatusCode() int {
 	if wrapped, ok := c.Response.(*ResponseWriter); ok {
 		return wrapped.StatusCode()
@@ -524,7 +528,7 @@ func (c *Context) SkipBody() bool {
 	return false
 }
 
-// Returns the *rex.Router instance.
+// Router returns the router associated with the request.
 func (c *Context) Router() *Router {
 	return c.router
 }

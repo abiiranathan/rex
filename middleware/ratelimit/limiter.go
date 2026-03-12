@@ -1,3 +1,4 @@
+// Package ratelimit provides rate limiting middleware for rex routers.
 package ratelimit
 
 import (

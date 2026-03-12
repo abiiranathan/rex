@@ -1,3 +1,4 @@
+// Package test provides HTTP testing helpers for rex routers.
 package test
 
 import (

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// SPAOptions for customizing the cache control and index file.
+// SPAOption configures SPA handling behavior.
 type SPAOption func(*spaHandler)
 
 type spaHandler struct {
@@ -136,7 +136,7 @@ func (r *Router) SPA(pattern string, index string, frontend http.FileSystem, opt
 	r.mux.Handle(fmt.Sprintf("GET %s", pattern), handler)
 }
 
-// Creates a new http.FileSystem from the fs.FS (e.g embed.FS) with the root directory.
+// CreateFileSystem creates an http.FileSystem from fs rooted at root.
 // This is useful for serving single page applications.
 func CreateFileSystem(frontendFS fs.FS, root string) http.FileSystem {
 	fsys, err := fs.Sub(frontendFS, root)

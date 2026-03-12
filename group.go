@@ -28,7 +28,7 @@ func (g *Group) Use(middlewares ...Middleware) {
 	g.middlewares = append(g.middlewares, middlewares...)
 }
 
-// Create a route and apply this middleware to it.
+// With creates a route builder with the additional middleware applied.
 func (g *Group) With(middlewares ...Middleware) *route {
 	return &route{
 		prefix:      g.prefix,
@@ -62,7 +62,7 @@ func (g *Group) DELETE(path string, handler HandlerFunc) {
 	g.router.handle(http.MethodDelete, g.prefix+path, handler, false, g.middlewares...)
 }
 
-// Creates a nested group with the given prefix and middleware.
+// Group creates a nested group with the given prefix and middleware.
 func (g *Group) Group(prefix string, middleware ...Middleware) *Group {
 	return g.router.Group(g.prefix+prefix, append(g.middlewares, middleware...)...)
 }

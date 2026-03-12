@@ -67,10 +67,10 @@ var (
 // HandlerFunc is the signature for route handlers that can return errors
 type HandlerFunc func(c *Context) error
 
-// Middleware function that takes a HandlerFunc and returns a HandlerFunc
+// Middleware transforms one HandlerFunc into another.
 type Middleware func(HandlerFunc) HandlerFunc
 
-// Generic type for response data
+// Map is a convenience alias for template and JSON response data.
 type Map map[string]any
 
 // WrapHandler wraps an http.Handler to be used as a rex.HandlerFunc
@@ -124,7 +124,7 @@ func SetError(r *http.Request, err error) {
 	*r = *r.WithContext(context.WithValue(r.Context(), contextErrorKey, err))
 }
 
-// Convert rex.HandlerFunc to http.Handler.
+// ToHandler converts a HandlerFunc to an http.Handler.
 func (r *Router) ToHandler(h HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := r.InitContext(w, req)
@@ -136,17 +136,17 @@ func (r *Router) ToHandler(h HandlerFunc) http.Handler {
 }
 
 // WrapMiddleware wraps an http middleware to be used as a rex middleware.
-func (router *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
+func (r *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
-			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				c.router = router
+			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				c.router = r
 
 				// The middleware receives 'w', which might be a wrapper around c.Response.
 				// We need to temporarily set c.Response to 'w' so that 'next' writes to the correct writer.
 				old := c.Response
 				c.Response = w
-				c.Request = r
+				c.Request = req
 				defer func() { c.Response = old }()
 
 				c.err = next(c)
@@ -223,10 +223,10 @@ type Router struct {
 	skipLog func(c *Context) bool
 }
 
-// Router option a function option for configuring the router.
+// RouterOption configures a Router during construction.
 type RouterOption func(*Router)
 
-// Replace the default slog.Logger with a custom logger.
+// WithLogger replaces the default slog.Logger with a custom logger.
 func WithLogger(logger *slog.Logger) RouterOption {
 	if logger == nil {
 		panic("logger cannot be nil")
@@ -245,7 +245,7 @@ func WithLoggerCallback(callback func(c *Context) []any) RouterOption {
 	}
 }
 
-// Skip logging this request if skipLog returns true.
+// SkipLog skips request logging when skipLog returns true.
 func SkipLog(skipLog func(c *Context) bool) RouterOption {
 	return func(r *Router) {
 		r.skipLog = skipLog
@@ -367,14 +367,14 @@ func (r *Router) RegisterValidationCtx(tag string, fn validator.FuncCtx) error {
 	return r.validator.RegisterValidationCtx(tag, fn, true)
 }
 
-// Set error handler for centralized error handling.
+// SetErrorHandler sets the error handler used for centralized error handling.
 func (r *Router) SetErrorHandler(handler ErrorHandler) {
 	if handler != nil {
 		r.errHandler = handler
 	}
 }
 
-// Global middleware
+// Use registers global middleware on the router.
 func (r *Router) Use(middlewares ...Middleware) {
 	r.globalMiddlewares = append(r.globalMiddlewares, middlewares...)
 }
@@ -393,13 +393,13 @@ func (r *Router) getContext() *Context {
 	return ctxPool.Get().(*Context)
 }
 
-// Put the context back in the pool.
+// PutContext returns a Context to the internal pool.
 func (r *Router) PutContext(c *Context) {
 	c.reset()
 	ctxPool.Put(c)
 }
 
-// Get context from the pool and initialize it with request and writer.
+// InitContext gets a Context from the pool and initializes it with the request and writer.
 func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context {
 	c := r.getContext()
 	c.Request = req
@@ -426,13 +426,13 @@ func (c *Context) reset() {
 }
 
 // handle registers a new route with the given path and handler
-func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static bool, middlewares ...Middleware) *route {
+func (r *Router) handle(method, pattern string, handler HandlerFunc, isStatic bool, middlewares ...Middleware) *route {
 	if StrictHome && pattern == "/" {
 		pattern = pattern + "{$}" // Match only the root pattern
 	}
 
 	// remove trailing slashes if not a static route
-	if !is_static {
+	if !isStatic {
 		if NoTrailingSlash && pattern != "/" {
 			pattern = strings.TrimSuffix(pattern, "/")
 		}
@@ -505,28 +505,32 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, is_static b
 	return newRoute
 }
 
-// Common HTTP method handlers
+// GET registers a GET route.
 func (r *Router) GET(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodGet, pattern, handler, false)
 }
 
+// POST registers a POST route.
 func (r *Router) POST(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodPost, pattern, handler, false)
 }
 
+// PUT registers a PUT route.
 func (r *Router) PUT(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodPut, pattern, handler, false)
 }
 
+// PATCH registers a PATCH route.
 func (r *Router) PATCH(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodPatch, pattern, handler, false)
 }
 
+// DELETE registers a DELETE route.
 func (r *Router) DELETE(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodDelete, pattern, handler, false)
 }
 
-// OPTIONS. This may not be necessary as registering GET request automatically registers OPTIONS.
+// OPTIONS registers an OPTIONS route.
 func (r *Router) OPTIONS(pattern string, handler HandlerFunc) {
 	r.handle(http.MethodOptions, pattern, handler, false)
 }
@@ -607,7 +611,7 @@ func staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
 
 }
 
-// Serve static assests at prefix in the directory dir.
+// Static serves static assets at prefix from dir.
 // e.g r.Static("/static", "static").
 // This method will strip the prefix from the URL path.
 // To serve minified assets(JS and CSS) if present, call rex.ServeMinifiedAssetsIfPresent=true.
@@ -626,7 +630,7 @@ func (r *Router) Static(prefix, dir string, maxAge ...int) {
 	r.handle(http.MethodGet, prefix, handler, true)
 }
 
-// Wrapper around http.ServeFile but applies global middleware to the handler.
+// File serves a single file while applying global middleware.
 func (r *Router) File(path, file string) {
 	var hf http.HandlerFunc = func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, file)
@@ -636,6 +640,7 @@ func (r *Router) File(path, file string) {
 	r.GET(path, handler)
 }
 
+// FileFS serves a single file from fs while applying global middleware.
 func (r *Router) FileFS(fs http.FileSystem, prefix, path string) {
 	r.GET(prefix, r.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		f, err := fs.Open(path)
@@ -656,7 +661,7 @@ func (r *Router) FileFS(fs http.FileSystem, prefix, path string) {
 	})))
 }
 
-// Serve favicon.ico from the file system fs at path.
+// FaviconFS serves favicon.ico from fs at path.
 func (r *Router) FaviconFS(fs http.FileSystem, path string) {
 	var handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		f, err := fs.Open(path)
@@ -694,6 +699,7 @@ type minifiedFS struct {
 	http.FileSystem
 }
 
+// Open opens a file, preferring a minified variant when configured and available.
 func (mfs *minifiedFS) Open(name string) (http.File, error) {
 	ext := filepath.Ext(name)
 	if slices.Contains(MinExtensions, ext) {
@@ -707,7 +713,7 @@ func (mfs *minifiedFS) Open(name string) (http.File, error) {
 	return mfs.FileSystem.Open(name)
 }
 
-// Like Static but for http.FileSystem.
+// StaticFS serves static assets from an http.FileSystem.
 // Example:
 //
 //	app.StaticFS("/static", rex.CreateFileSystem(embedfs, "static"), 3600)
@@ -741,6 +747,7 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 	r.handle(http.MethodGet, prefix, finalHandler, true)
 }
 
+// RedirectOptions configures redirect status, params, and query parameters.
 type RedirectOptions struct {
 	Status      int               // status code to use for the redirect
 	Params      map[string]string // query parameters to add to the redirect URL

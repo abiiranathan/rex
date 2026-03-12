@@ -59,8 +59,8 @@ func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 	}
 }
 
-// CreateToken creates a new JWT token with the given payload and expiry duration.
-// JWT is signed with the given secret key using the HMAC256 algorithm.
+// CreateJWTToken creates a JWT token with the given payload and expiry duration.
+// The token is signed with the secret key using HMAC SHA-256.
 func CreateJWTToken(secret string, payload any, exp time.Duration) (string, error) {
 	if secret == "" {
 		return "", fmt.Errorf("secret key must not be empty")
@@ -97,8 +97,8 @@ func VerifyJWToken(secret, tokenString string) (jwt.MapClaims, error) {
 	return token.Claims.(jwt.MapClaims), nil
 }
 
-// Returns the payload from the request or nil if non-exists.
-// Should be called inside the handler when JWT verification is complete.
+// JwtClaims returns the JWT claims stored on the request context.
+// It should be called after JWT verification has completed.
 func JwtClaims(req *http.Request) (jwt.MapClaims, error) {
 	if claims, ok := req.Context().Value(jwtClaimsKey).(jwt.MapClaims); ok {
 		return claims, nil
@@ -106,7 +106,7 @@ func JwtClaims(req *http.Request) (jwt.MapClaims, error) {
 	return nil, fmt.Errorf("invalid or missing JWT claims")
 }
 
-// Returns true if JWT authentication was skipped.
+// JWTAuthSkipped reports whether JWT authentication was skipped for the request.
 func JWTAuthSkipped(r *http.Request) bool {
 	value := r.Context().Value(jwtAuthIsSkipped)
 	if skipped, ok := value.(bool); skipped && ok {

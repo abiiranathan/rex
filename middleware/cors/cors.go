@@ -1,3 +1,4 @@
+// Package cors provides CORS middleware for rex routers.
 package cors
 
 import (

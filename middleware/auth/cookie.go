@@ -17,10 +17,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+// CtxKey identifies auth-related values stored in the request context.
+type CtxKey string
+
 // Context variables
 // =======================
 const (
-	authSkipped   = "cookie_auth_skipped"
+	authSkipped   = CtxKey("cookie_auth_skipped")
 	sessionKey    = "cookie_session_key"
 	authKey       = "rex_authenticated"
 	stateKey      = "rex_auth_state"
@@ -38,6 +41,7 @@ var (
 	ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
 )
 
+// CookieConfig defines the behavior of the cookie authentication middleware.
 type CookieConfig struct {
 	// Cookie options.
 	// Default: HttpOnly=true, SameSite=Strict(always), MaxAge=24hrs, Domain=/,secure=false
@@ -50,20 +54,18 @@ type CookieConfig struct {
 	ErrorHandler func(c *rex.Context) error
 }
 
-/*
-InitializeCookieStore initializes cookie store with the provided secret/encryption key pairs.
-Keys are defined in pairs to allow key rotation, but the common case is to
-set a single authentication key and optionally an encryption key.
-
-The first key in a pair is used for authentication and the second for encryption.
-The encryption key can be set to nil or omitted in the last pair,
-but the authentication key is required in all pairs.
-
-It is recommended to use an authentication key with 32 or 64 bytes.
-The encryption key, if set, must be either 16, 24, or 32 bytes to select AES-128, AES-192, or AES-256 modes.
-
-userType is the struct instance that is registered with the gob encoder.
-*/
+// InitializeCookieStore initializes the cookie store with the provided secret and encryption key pairs.
+// Keys are defined in pairs to allow key rotation, but the common case is to
+// set a single authentication key and optionally an encryption key.
+//
+// The first key in a pair is used for authentication and the second for encryption.
+// The encryption key can be set to nil or omitted in the last pair,
+// but the authentication key is required in all pairs.
+//
+// It is recommended to use an authentication key with 32 or 64 bytes.
+// The encryption key, if set, must be either 16, 24, or 32 bytes to select AES-128, AES-192, or AES-256 modes.
+//
+// userType is the struct instance that is registered with the gob encoder.
 func InitializeCookieStore(keyPairs [][]byte, userType any) {
 	if len(keyPairs) < 1 {
 		panic("you must pass atleast one keyPair")
@@ -243,7 +245,7 @@ func ClearAuthState(c *rex.Context) {
 	})
 }
 
-// Returns true if Cookie auth was authentication was skipped.
+// CookieAuthSkipped reports whether cookie authentication was skipped for the request.
 func CookieAuthSkipped(r *http.Request) bool {
 	value := r.Context().Value(authSkipped)
 	if skipped, ok := value.(bool); skipped && ok {

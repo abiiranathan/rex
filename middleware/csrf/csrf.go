@@ -1,9 +1,4 @@
-// Description: CSRF protection middleware for Go web servers.
-// The CSRF middleware generates and validates tokens to prevent cross-site request forgery attacks.
-// The CSRF token is set in an HTTP-only cookie(to prevent access via JavaScript) and and a hidden form field.
-// The middleware checks the token in the form or request headers against the cookie.
-// The CSRF token is generated using 32 random bytes encoded in base64.
-// Access to the token is provided in the context using the key "csrf_token".
+// Package csrf provides CSRF protection middleware for rex routers.
 package csrf
 
 import (
@@ -29,16 +24,16 @@ var (
 	httpsCookie     = true
 )
 
-// Generates a random CSRF token.
+// CreateToken generates a random CSRF token.
 func CreateToken() (string, error) {
 	tokenBytes := make([]byte, 32) // Generate 32 random bytes
 	_, _ = rand.Read(tokenBytes)   // never returns an error
 	return base64.StdEncoding.EncodeToString(tokenBytes), nil
 }
 
-// Middleware sets and verifies CSRF tokens using HTTP-only cookies and forms.
-// Set the CSRF token in the form using {{ .csrf_token }} in the template.
-// If secureCookie is true, the csrf token is transmitted only in a secure context (https).
+// New returns middleware that sets and verifies CSRF tokens using cookies and forms.
+// Set the token in forms using {{ .csrf_token }} in templates.
+// If secureCookie is true, the token cookie is transmitted only over HTTPS.
 func New(store sessions.Store, secureCookie bool) rex.Middleware {
 	httpsCookie = secureCookie
 
