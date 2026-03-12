@@ -24,20 +24,7 @@ type ChainUser struct {
 func TestChainedMiddleware(t *testing.T) {
 	// Initialize Auth Store
 	secretKey := securecookie.GenerateRandomKey(32)
-	auth.InitializeCookieStore([][]byte{secretKey}, ChainUser{})
-
-	r := rex.NewRouter()
-
-	// Apply Middlewares in order: Auth -> Brotli -> ETag
-	// Flow:
-	// Request -> Brotli (sets up writer) -> ETag (sets up writer) -> Auth -> Handler
-	// Response: Handler writes -> ETag buffers -> ETag writes to Brotli -> Brotli compresses -> Response
-
-	r.Use(brotli.Brotli())
-	r.Use(etag.New())
-
-	// Auth config
-	authConfig := auth.CookieConfig{
+	cookieAuth, err := auth.NewCookieAuth("rex_chain_session", [][]byte{secretKey}, ChainUser{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			Path:     "/",
 			MaxAge:   3600,
@@ -51,18 +38,32 @@ func TestChainedMiddleware(t *testing.T) {
 		SkipAuth: func(c *rex.Context) bool {
 			return c.Path() == "/login"
 		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie auth: %v", err)
 	}
-	r.Use(auth.Cookie("rex_chain_session", authConfig))
+
+	r := rex.NewRouter()
+
+	// Apply Middlewares in order: Auth -> Brotli -> ETag
+	// Flow:
+	// Request -> Brotli (sets up writer) -> ETag (sets up writer) -> Auth -> Handler
+	// Response: Handler writes -> ETag buffers -> ETag writes to Brotli -> Brotli compresses -> Response
+
+	r.Use(brotli.Brotli())
+	r.Use(etag.New())
+
+	r.Use(cookieAuth.Middleware())
 
 	// Routes
 	r.POST("/login", func(c *rex.Context) error {
 		u := ChainUser{Username: "testuser"}
-		return auth.SetAuthState(c, u)
+		return cookieAuth.SetState(c, u)
 	})
 
 	r.GET("/data", func(c *rex.Context) error {
 		// Verify we are authenticated
-		user := auth.CookieValue(c)
+		user := cookieAuth.Value(c)
 		if user == nil {
 			return fmt.Errorf("not authenticated")
 		}

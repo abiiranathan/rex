@@ -11,29 +11,29 @@ go get -u github.com/abiiranathan/rex
 
 Basic usage:
 ```go
-	// First, register your user type for session storage
-	auth.Register(User{})
-
-	// Create the middleware with authentication key
-	authMiddleware := auth.Cookie(auth.CookieConfig{
-		KeyPairs: [][]byte{[]byte("your-32-byte-auth-key")},
-		ErrorHandler: func(c *rex.Context) error {
-			return c.Status(http.StatusUnauthorized).JSON(map[string]string{
-				"error": "Unauthorized",
-			})
+	authMiddleware := auth.NewCookieAuth(
+		"session",
+		[][]byte{[]byte("your-32-byte-auth-key")},
+		User{},
+		auth.CookieConfig{
+			ErrorHandler: func(c *rex.Context) error {
+				return c.Status(http.StatusUnauthorized).JSON(map[string]string{
+					"error": "Unauthorized",
+				})
+			},
 		},
-	})
+	)
 
 	// Use the middleware in your router
 	router := rex.NewRouter()
-	router.Use(authMiddleware)
+	router.Use(authMiddleware.Middleware())
 ```
 Login example:
 
 ```go
 	router.Post("/login", func(c *rex.Context) error {
 		user := &User{ID: 1, Name: "John"}
-		if err := auth.SetAuthState(c, user); err != nil {
+		if err := authMiddleware.SetState(c, user); err != nil {
 			return err
 		}
 		return c.JSON(user)
@@ -45,8 +45,8 @@ Access authenticated user:
 
 ```go
 	router.Get("/me", func(c *rex.Context) error {
-		state, authenticated := auth.GetAuthState(c)
-		if !authenticated {
+		state := authMiddleware.Value(c)
+		if state == nil {
 			return c.Status(http.StatusUnauthorized)
 		}
 		user := state.(*User)
@@ -59,7 +59,8 @@ Logout example:
 
 ```go
 	router.Post("/logout", func(c *rex.Context) error {
-		return auth.ClearAuthState(c)
+		authMiddleware.Clear(c)
+		return c.Status(http.StatusNoContent)
 	})
 
 ```
@@ -83,41 +84,34 @@ Key Generation Example:
 For key rotation, you can provide multiple key pairs:
 
 ```go
-	authMiddleware := auth.Cookie(auth.CookieConfig{
-		KeyPairs: [][]byte{
+	authMiddleware := auth.NewCookieAuth("session", [][]byte{
 			[]byte("new-32-byte-auth-key"),
 			[]byte("new-32-byte-encrypt-key"),
 			[]byte("old-32-byte-auth-key"),
 			[]byte("old-32-byte-encrypt-key"),
-		},
-		// ... other config
-	})
+		}, User{}, auth.CookieConfig{/* ... */})
 ```
 
 Custom cookie options:
 
 ```go
-	authMiddleware := auth.Cookie(auth.CookieConfig{
-		KeyPairs: [][]byte{[]byte("your-32-byte-auth-key")},
+	authMiddleware := auth.NewCookieAuth("session", [][]byte{[]byte("your-32-byte-auth-key")}, User{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			Path:     "/",
 			Domain:   "example.com",
 			MaxAge:   3600,
 			Secure:   true,
 		},
-		// ... other config
 	})
 ```
 
 Skip authentication for specific routes:
 
 ```go
-	authMiddleware := auth.Cookie(auth.CookieConfig{
-		KeyPairs: [][]byte{[]byte("your-32-or-64-byte-auth-key")},
-		SkipAuth: func(req *http.Request) bool {
-			return req.URL.Path == "/login" || req.URL.Path == "/signup"
+	authMiddleware := auth.NewCookieAuth("session", [][]byte{[]byte("your-32-or-64-byte-auth-key")}, User{}, auth.CookieConfig{
+		SkipAuth: func(c *rex.Context) bool {
+			return c.Path() == "/login" || c.Path() == "/signup"
 		},
-		// ... other config
 	})
 
 ```

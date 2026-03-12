@@ -32,3 +32,4 @@ go.work
 cmd/example/example
 cmd/server/server
 .vscode/
+*.prof

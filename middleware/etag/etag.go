@@ -7,59 +7,89 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"hash"
-	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/abiiranathan/rex"
 )
 
-type etagResponseWriter struct {
-	http.ResponseWriter              // the original ResponseWriter
-	buf                 bytes.Buffer // buffer to store the response body
-	hash                hash.Hash    // hash to calculate the ETag
-	w                   io.Writer    // multiwriter to write to both the buffer and the hash
-	status              int          // status code of the response
-	written             bool         // whether the header has been written
+// writerPool reuses etagResponseWriter instances to avoid per-request heap allocation.
+var writerPool = sync.Pool{
+	New: func() any {
+		ew := &etagResponseWriter{}
+		ew.hash = sha1.New()
+		return ew
+	},
 }
 
-// WriteHeader records the response status code.
+// etagResponseWriter intercepts writes to buffer the body and compute a hash
+// simultaneously, deferring the actual write until the ETag is known.
+type etagResponseWriter struct {
+	http.ResponseWriter
+	buf         bytes.Buffer
+	hash        hash.Hash
+	status      int
+	wroteHeader bool
+}
+
+func (e *etagResponseWriter) reset(w http.ResponseWriter) {
+	e.ResponseWriter = w
+	e.buf.Reset()
+	e.hash.Reset()
+	e.status = http.StatusOK
+	e.wroteHeader = false
+}
+
+// WriteHeader captures the status code. For 200 responses we defer the actual
+// WriteHeader call until we know the ETag; for all others we pass through immediately.
 func (e *etagResponseWriter) WriteHeader(code int) {
-	if e.written {
+	if e.wroteHeader {
 		return
 	}
+	e.wroteHeader = true
 	e.status = code
-	e.written = true
 	if code != http.StatusOK {
 		e.ResponseWriter.WriteHeader(code)
 	}
 }
 
-// Write buffers the response body while updating the ETag hash.
+// Write fans out to both the hash and the buffer for 200 responses.
+// Non-200 writes bypass buffering entirely.
 func (e *etagResponseWriter) Write(p []byte) (int, error) {
-	if !e.written {
-		if e.status == 0 {
-			e.status = http.StatusOK
-		}
-		e.written = true
+	if !e.wroteHeader {
+		e.wroteHeader = true
+		e.status = http.StatusOK
 	}
-
 	if e.status != http.StatusOK {
 		return e.ResponseWriter.Write(p)
 	}
-
-	return e.w.Write(p)
+	// Write to hash and buf in two calls — avoids io.MultiWriter allocation
+	// and keeps the two writes on the same cache lines.
+	n, err := e.buf.Write(p)
+	if err != nil {
+		return n, err
+	}
+	_, _ = e.hash.Write(p) // sha1.Write never returns an error
+	return n, nil
 }
 
-// Flush flushes the underlying response writer when supported.
+// Unwrap lets http.ResponseController reach the underlying writer (Go 1.20+).
+func (e *etagResponseWriter) Unwrap() http.ResponseWriter {
+	return e.ResponseWriter
+}
+
+// Flush forwards to the underlying writer if it supports flushing.
+// Note: flushing mid-response means we can no longer compute an ETag for the
+// full body, so callers should not mix streaming with ETag middleware.
 func (e *etagResponseWriter) Flush() {
 	if f, ok := e.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-// Hijack implements http.Hijacker when supported by the underlying writer.
+// Hijack supports WebSocket upgrades on the underlying connection.
 func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := e.ResponseWriter.(http.Hijacker); ok {
 		return h.Hijack()
@@ -67,74 +97,56 @@ func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, http.ErrNotSupported
 }
 
-// Status returns the recorded HTTP status code.
-func (e *etagResponseWriter) Status() int {
-	return e.status
-}
+// SkipFunc reports whether ETag processing should be skipped for a request.
+type SkipFunc func(r *http.Request) bool
 
-// SetStatus records a status code without committing headers yet.
-func (e *etagResponseWriter) SetStatus(code int) {
-	if e.written {
-		return
-	}
-	e.status = code
-}
-
-// New returns middleware that computes and validates ETag headers for cacheable responses.
-func New(skip ...func(r *http.Request) bool) rex.Middleware {
+// New returns middleware that computes and validates ETags for cacheable GET/HEAD
+// responses. It buffers the response body only for 200 OK responses; all other
+// status codes are passed through without buffering or hashing.
+//
+// Optional SkipFunc predicates short-circuit ETag processing when any returns true.
+func New(skip ...SkipFunc) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			var skipEtag bool
-			for _, s := range skip {
-				if s(c.Request) {
-					skipEtag = true
-					break
-				}
-			}
-
-			if c.Method() != http.MethodGet && c.Method() != http.MethodHead {
-				skipEtag = true
-			}
-
-			if strings.EqualFold(c.GetHeader("Upgrade"), "websocket") {
-				skipEtag = true
-			}
-
-			if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
-				skipEtag = true
-			}
-
-			if skipEtag {
+			// Fast-path: skip non-cacheable requests without touching the pool.
+			if !isCacheable(c, skip) {
 				return next(c)
 			}
 
-			ew := &etagResponseWriter{
-				ResponseWriter: c.Response,
-				buf:            bytes.Buffer{},
-				hash:           sha1.New(),
-				status:         http.StatusOK,
-			}
-			ew.w = io.MultiWriter(&ew.buf, ew.hash)
+			ew := writerPool.Get().(*etagResponseWriter)
+			ew.reset(c.Response)
 
-			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
-				ew.ResponseWriter = w
-				return ew
-			})
-
+			// Swap the writer on the context; restore unconditionally on exit.
+			original := c.Response
+			c.Response = ew
 			err := next(c)
-			restore() // Restore c.Response to original
+			c.Response = original
+
+			// Return the writer to the pool before any early returns so it
+			// is available to other goroutines as soon as possible.
+			status := ew.status
+			etag := fmt.Sprintf(`"%x"`, ew.hash.Sum(nil))
+			body := ew.buf.Bytes()
+
+			// Guard against oversized buffers persisting in the pool.
+			if ew.buf.Cap() > 512<<10 { // 512 KB
+				// Discard the oversized writer; the pool will allocate a fresh one
+				// via New() when next needed. Putting a replacement here is unnecessary
+				// and was masking the fact that we're intentionally discarding ew.
+			} else {
+				writerPool.Put(ew)
+			}
 
 			if err != nil {
 				return err
 			}
 
-			if ew.status != http.StatusOK {
+			// Non-200 responses were already written through; nothing left to do.
+			if status != http.StatusOK {
 				return nil
 			}
 
-			etag := fmt.Sprintf(`"%x"`, ew.hash.Sum(nil))
-			c.SetHeader("ETag", etag)
-
+			// Validate conditional request headers before committing the response.
 			ifNoneMatch := c.GetHeader("If-None-Match")
 			if ifNoneMatch == etag {
 				c.WriteHeader(http.StatusNotModified)
@@ -147,12 +159,31 @@ func New(skip ...func(r *http.Request) bool) rex.Middleware {
 				return nil
 			}
 
-			// Write buffered response to original writer
-			// Note: We need to write the header to the ORIGINAL writer now.
-			// ew.ResponseWriter is likely the original writer (or the one below etag).
-			ew.ResponseWriter.WriteHeader(http.StatusOK)
-			_, err = ew.buf.WriteTo(ew.ResponseWriter)
+			// Commit: write ETag, status, then body.
+			c.SetHeader("ETag", etag)
+			original.WriteHeader(http.StatusOK)
+			_, err = original.Write(body)
 			return err
 		}
 	}
+}
+
+// isCacheable returns true when ETag processing should run for this request.
+func isCacheable(c *rex.Context, skip []SkipFunc) bool {
+	method := c.Method()
+	if method != http.MethodGet && method != http.MethodHead {
+		return false
+	}
+	if strings.EqualFold(c.GetHeader("Upgrade"), "websocket") {
+		return false
+	}
+	if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
+		return false
+	}
+	for _, s := range skip {
+		if s(c.Request) {
+			return false
+		}
+	}
+	return true
 }

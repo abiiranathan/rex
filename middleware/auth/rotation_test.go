@@ -16,9 +16,7 @@ import (
 func TestCookieRotation(t *testing.T) {
 	// 1. Initialize with Key A
 	keyA := securecookie.GenerateRandomKey(32)
-	auth.InitializeCookieStore([][]byte{keyA}, User{})
 
-	r := rex.NewRouter()
 	sessionName := "rotation_test_session"
 
 	config := auth.CookieConfig{
@@ -36,7 +34,12 @@ func TestCookieRotation(t *testing.T) {
 			return c.Path() == "/login"
 		},
 	}
-	r.Use(auth.Cookie(sessionName, config))
+	authA, err := auth.NewCookieAuth(sessionName, [][]byte{keyA}, User{}, config)
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie authA: %v", err)
+	}
+	r := rex.NewRouter()
+	r.Use(authA.Middleware())
 
 	r.GET("/protected", func(c *rex.Context) error {
 		return c.String("Protected Content")
@@ -49,7 +52,7 @@ func TestCookieRotation(t *testing.T) {
 	// Note: We can't easily access the store to create a cookie without a request context
 	// So we'll use a login route helper.
 	r.POST("/login", func(c *rex.Context) error {
-		return auth.SetAuthState(c, User{Username: "test"})
+		return authA.SetState(c, User{Username: "test"})
 	})
 
 	req := httptest.NewRequest("POST", "/login", nil)
@@ -65,9 +68,18 @@ func TestCookieRotation(t *testing.T) {
 	}
 	validCookie := cookies[0]
 
-	// 3. Rotate Keys: Initialize with Key B only
+	// 3. Rotate Keys: create a new auth instance with Key B only
 	keyB := securecookie.GenerateRandomKey(32)
-	auth.InitializeCookieStore([][]byte{keyB}, User{})
+	authB, err := auth.NewCookieAuth(sessionName, [][]byte{keyB}, User{}, config)
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie authB: %v", err)
+	}
+
+	r = rex.NewRouter()
+	r.Use(authB.Middleware())
+	r.GET("/protected", func(c *rex.Context) error {
+		return c.String("Protected Content")
+	})
 
 	// 4. Request /protected with Key A signed cookie
 	w = httptest.NewRecorder()

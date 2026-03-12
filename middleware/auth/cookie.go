@@ -6,15 +6,13 @@
 package auth
 
 import (
-	"context"
 	"encoding/gob"
-	"log"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/abiiranathan/rex"
 	"github.com/gorilla/sessions"
-	"github.com/pkg/errors"
 )
 
 // CtxKey identifies auth-related values stored in the request context.
@@ -30,16 +28,17 @@ const (
 	lastAccessKey = "last_access"
 )
 
-var (
-	// Cookie store.
-	store *sessions.CookieStore
+// ErrNotInitialized is returned when a CookieAuth instance is nil or missing its store.
+var ErrNotInitialized = errors.New("auth: cookie auth is not initialized")
 
-	// The cookie session name.
-	rexSessionName string
-
-	// ErrNotInitialized is returned when store is not initialized.
-	ErrNotInitialized = errors.New("auth: Store not initialized, call auth.InitializeCookieStore first")
-)
+// CookieAuth encapsulates session cookie authentication state and behavior.
+type CookieAuth struct {
+	store       *sessions.CookieStore
+	sessionName string
+	config      CookieConfig
+	maxAge      time.Duration
+	refreshAge  time.Duration
+}
 
 // CookieConfig defines the behavior of the cookie authentication middleware.
 type CookieConfig struct {
@@ -54,55 +53,17 @@ type CookieConfig struct {
 	ErrorHandler func(c *rex.Context) error
 }
 
-// InitializeCookieStore initializes the cookie store with the provided secret and encryption key pairs.
-// Keys are defined in pairs to allow key rotation, but the common case is to
-// set a single authentication key and optionally an encryption key.
-//
-// The first key in a pair is used for authentication and the second for encryption.
-// The encryption key can be set to nil or omitted in the last pair,
-// but the authentication key is required in all pairs.
-//
-// It is recommended to use an authentication key with 32 or 64 bytes.
-// The encryption key, if set, must be either 16, 24, or 32 bytes to select AES-128, AES-192, or AES-256 modes.
-//
-// userType is the struct instance that is registered with the gob encoder.
-func InitializeCookieStore(keyPairs [][]byte, userType any) {
-	if len(keyPairs) < 1 {
-		panic("you must pass atleast one keyPair")
-	}
-	if userType == nil {
-		panic("userType must not be nil")
-	}
-
-	store = sessions.NewCookieStore(keyPairs...)
-	gob.Register(userType)
-	gob.Register(time.Time{})
+// DefaultErrorHandler returns HTTP 401 for unauthenticated requests.
+func DefaultErrorHandler(c *rex.Context) error {
+	c.WriteHeader(http.StatusUnauthorized)
+	return nil
 }
 
-// Cookie creates a new authentication middleware with the given configuration.
-// Keys are defined in pairs to allow key rotation,
-// but the common case is to set a single authentication key and optionally an encryption key.
-//
-// You MUST register the type of state you want to store in the session by calling
-// auth.Register or gob.Register before using this middleware.
-// Access the session with c.Get(auth.SessionKey). It will be nil if not logged in.
-func Cookie(sessionName string, config CookieConfig) rex.Middleware {
-	if sessionName == "" {
-		panic("sessionName is required")
-	}
-
+func normalizeCookieConfig(config CookieConfig) CookieConfig {
 	if config.ErrorHandler == nil {
-		panic("you must provide the error handler")
+		config.ErrorHandler = DefaultErrorHandler
 	}
 
-	if store == nil {
-		panic(ErrNotInitialized)
-	}
-
-	// Update the global session name
-	rexSessionName = sessionName
-
-	// Set default options if not provided
 	if config.Options == nil {
 		config.Options = &sessions.Options{
 			Path:     "/",
@@ -111,9 +72,14 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 			SameSite: http.SameSiteStrictMode,
 		}
 	} else {
-		// Override security-critical options
-		config.Options.HttpOnly = true
-		config.Options.SameSite = http.SameSiteStrictMode
+		config.Options = &sessions.Options{
+			Path:     config.Options.Path,
+			Domain:   config.Options.Domain,
+			MaxAge:   config.Options.MaxAge,
+			Secure:   config.Options.Secure,
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+		}
 
 		if config.Options.MaxAge <= 0 {
 			config.Options.MaxAge = int((24 * time.Hour).Seconds())
@@ -124,64 +90,89 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 		}
 	}
 
+	return config
+}
+
+// NewCookieAuth creates a cookie authentication instance with its own store and session name.
+func NewCookieAuth(sessionName string, keyPairs [][]byte, userType any, config CookieConfig) (*CookieAuth, error) {
+	if sessionName == "" {
+		return nil, errors.New("sessionName is required")
+	}
+	if len(keyPairs) < 1 {
+		return nil, errors.New("you must pass atleast one keyPair")
+	}
+	if userType == nil {
+		return nil, errors.New("userType must not be nil")
+	}
+
+	gob.Register(userType)
+	gob.Register(time.Time{})
+
+	config = normalizeCookieConfig(config)
+	store := sessions.NewCookieStore(keyPairs...)
 	store.Options = config.Options
 
-	// Calculate the refresh threshold: refresh if less than half the MaxAge remains.
-	refreshThreshold := time.Duration(config.Options.MaxAge/2) * time.Second
+	maxAge := time.Duration(config.Options.MaxAge) * time.Second
+	return &CookieAuth{
+		store:       store,
+		sessionName: sessionName,
+		config:      config,
+		maxAge:      maxAge,
+		refreshAge:  maxAge / 2,
+	}, nil
+}
 
+func (a *CookieAuth) unauthenticated(c *rex.Context, next rex.HandlerFunc) error {
+	if a.config.SkipAuth != nil && a.config.SkipAuth(c) {
+		c.Set(string(authSkipped), true)
+		return next(c)
+	}
+	return a.config.ErrorHandler(c)
+}
+
+func (a *CookieAuth) expire(c *rex.Context) {
+	http.SetCookie(c.Response, &http.Cookie{
+		Name:     a.sessionName,
+		Path:     a.config.Options.Path,
+		Domain:   a.config.Options.Domain,
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: a.config.Options.HttpOnly,
+		Secure:   a.config.Options.Secure,
+		SameSite: a.config.Options.SameSite,
+	})
+}
+
+// Middleware returns the cookie authentication middleware for this instance.
+func (a *CookieAuth) Middleware() rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
-			handleError := func() error {
-				if config.SkipAuth != nil && config.SkipAuth(c) {
-					c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), authSkipped, true))
-					return next(c)
-				}
-				return config.ErrorHandler(c)
-			}
-
-			session, err := store.Get(c.Request, sessionName)
+			session, err := a.store.Get(c.Request, a.sessionName)
 			if err != nil {
-				// Expire the cookie if decoding fails (e.g. invalid signature due to key rotation)
-				http.SetCookie(c.Response, &http.Cookie{
-					Name:     sessionName,
-					Path:     config.Options.Path,
-					Domain:   config.Options.Domain,
-					MaxAge:   -1,
-					Expires:  time.Unix(1, 0),
-					HttpOnly: config.Options.HttpOnly,
-					Secure:   config.Options.Secure,
-					SameSite: config.Options.SameSite,
-				})
-				return handleError()
+				a.expire(c)
+				return a.unauthenticated(c, next)
 			}
 
 			if session.Values[authKey] != true {
-				return handleError()
+				return a.unauthenticated(c, next)
 			}
 
-			// --- Sliding window: refresh the cookie if it's getting old ---
 			now := time.Now()
-
 			lastAccess, ok := session.Values[lastAccessKey].(time.Time)
 			if !ok {
-				// Malformed session: no timestamp, treat as unauthenticated
-				return handleError()
+				return a.unauthenticated(c, next)
 			}
 
-			// Enforce MaxAge server-side: reject sessions older than MaxAge
-			// The cookie store should do this but we want to be explicit.
 			sessionAge := now.Sub(lastAccess)
-			maxAge := time.Duration(config.Options.MaxAge) * time.Second
-			if sessionAge > maxAge {
-				return handleError()
+			if sessionAge > a.maxAge {
+				return a.unauthenticated(c, next)
 			}
 
-			// Sliding window: refresh only after half the window has elapsed
-			if sessionAge > refreshThreshold {
+			if sessionAge > a.refreshAge {
 				session.Values[lastAccessKey] = now
-				session.Options = config.Options
+				session.Options = a.config.Options
 				if err := session.Save(c.Request, c.Response); err != nil {
-					log.Println(err)
+					return err
 				}
 			}
 
@@ -191,15 +182,13 @@ func Cookie(sessionName string, config CookieConfig) rex.Middleware {
 	}
 }
 
-// SetAuthState stores user state for this request.
-// It could be the user object, userId or anything serializable into a cookie.
-// This is typically called following user login.
-func SetAuthState(c *rex.Context, state any) error {
-	if store == nil {
+// SetState stores authentication state for this instance.
+func (a *CookieAuth) SetState(c *rex.Context, state any) error {
+	if a == nil || a.store == nil {
 		return ErrNotInitialized
 	}
 
-	session, err := store.Get(c.Request, rexSessionName)
+	session, err := a.store.Get(c.Request, a.sessionName)
 	if err != nil {
 		return err
 	}
@@ -207,47 +196,34 @@ func SetAuthState(c *rex.Context, state any) error {
 	session.Values[authKey] = true
 	session.Values[stateKey] = state
 	session.Values[lastAccessKey] = time.Now()
+	session.Options = a.config.Options
 	return session.Save(c.Request, c.Response)
 }
 
-// CookieValue returns the auth state for this request or nil if not logged in.
-func CookieValue(c *rex.Context) (state any) {
+// Value returns the auth state for this request or nil if not logged in.
+func (a *CookieAuth) Value(c *rex.Context) any {
 	return c.GetOrEmpty(sessionKey)
 }
 
-// ClearAuthState deletes authentication state.
-func ClearAuthState(c *rex.Context) {
-	if store == nil {
+// Clear deletes authentication state for this instance.
+func (a *CookieAuth) Clear(c *rex.Context) {
+	if a == nil || a.store == nil {
 		return
 	}
 
-	session, _ := store.Get(c.Request, rexSessionName)
-	// Clear values
-	clear(session.Values)
-
-	// We expire the cookie explicitly using the store options to match Path and Domain
-	options := store.Options
-	if options == nil {
-		options = &sessions.Options{Path: "/"}
+	session, err := a.store.Get(c.Request, a.sessionName)
+	if err == nil {
+		clear(session.Values)
 	}
-
-	http.SetCookie(c.Response, &http.Cookie{
-		Name:     rexSessionName,
-		Path:     options.Path,
-		Domain:   options.Domain,
-		MaxAge:   -1,
-		Expires:  time.Unix(1, 0),
-		HttpOnly: options.HttpOnly,
-		Secure:   options.Secure,
-		SameSite: options.SameSite,
-	})
+	a.expire(c)
 }
 
-// CookieAuthSkipped reports whether cookie authentication was skipped for the request.
-func CookieAuthSkipped(r *http.Request) bool {
-	value := r.Context().Value(authSkipped)
-	if skipped, ok := value.(bool); skipped && ok {
-		return true
+// Skipped reports whether this request skipped cookie authentication.
+func (a *CookieAuth) Skipped(c *rex.Context) bool {
+	value, ok := c.Get(string(authSkipped))
+	if !ok {
+		return false
 	}
-	return false
+	skipped, ok := value.(bool)
+	return ok && skipped
 }

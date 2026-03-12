@@ -32,11 +32,7 @@ func skipAuth(c *rex.Context) bool {
 func TestCookieMiddleware(t *testing.T) {
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
-
-	auth.InitializeCookieStore([][]byte{secretKey, encryptionKey}, User{})
-
-	router := rex.NewRouter()
-	router.Use(auth.Cookie("rex_session_name", auth.CookieConfig{
+	cookieAuth, err := auth.NewCookieAuth("rex_session_name", [][]byte{secretKey, encryptionKey}, User{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   int((24 * time.Hour).Seconds()),
 			Secure:   false,
@@ -44,7 +40,13 @@ func TestCookieMiddleware(t *testing.T) {
 		},
 		ErrorHandler: errorCallback,
 		SkipAuth:     skipAuth,
-	}))
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie auth: %v", err)
+	}
+
+	router := rex.NewRouter()
+	router.Use(cookieAuth.Middleware())
 
 	router.POST("/login", func(c *rex.Context) error {
 		contentType := c.ContentType()
@@ -65,7 +67,7 @@ func TestCookieMiddleware(t *testing.T) {
 
 		// Set auth state
 		u := User{username, password}
-		err := auth.SetAuthState(c, u)
+		err := cookieAuth.SetState(c, u)
 		if err != nil {
 			return err
 		}
@@ -73,7 +75,7 @@ func TestCookieMiddleware(t *testing.T) {
 	})
 
 	router.GET("/", func(c *rex.Context) error {
-		state := auth.CookieValue(c)
+		state := cookieAuth.Value(c)
 		if state == nil {
 			t.Fatal("user is not authenticated")
 		}
@@ -83,7 +85,7 @@ func TestCookieMiddleware(t *testing.T) {
 	})
 
 	router.POST("/logout", func(c *rex.Context) error {
-		auth.ClearAuthState(c)
+		cookieAuth.Clear(c)
 		return c.String("Logout successful")
 	})
 
@@ -152,14 +154,10 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
 
-	auth.InitializeCookieStore([][]byte{secretKey, encryptionKey}, User{})
-
 	// Use a short MaxAge so we can reason about the threshold easily.
 	// refreshThreshold = maxAge / 2 = 4s
 	maxAge := 8
-
-	router := rex.NewRouter()
-	router.Use(auth.Cookie("rex_session_name", auth.CookieConfig{
+	cookieAuth, err := auth.NewCookieAuth("rex_session_name", [][]byte{secretKey, encryptionKey}, User{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   maxAge,
 			Secure:   false,
@@ -167,10 +165,16 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 		},
 		ErrorHandler: errorCallback,
 		SkipAuth:     skipAuth,
-	}))
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie auth: %v", err)
+	}
+
+	router := rex.NewRouter()
+	router.Use(cookieAuth.Middleware())
 
 	router.POST("/login", func(c *rex.Context) error {
-		err := auth.SetAuthState(c, User{"testuser", "testpass"})
+		err := cookieAuth.SetState(c, User{"testuser", "testpass"})
 		if err != nil {
 			return err
 		}
@@ -266,5 +270,142 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 	w = doRequest(http.MethodGet, "/protected", []string{refreshedCookie})
 	if w.Code != http.StatusOK {
 		t.Errorf("refreshed cookie should still be valid: expected 200, got %d", w.Code)
+	}
+}
+
+func TestCookieAuthInstanceAPI(t *testing.T) {
+	secretKey := securecookie.GenerateRandomKey(32)
+	encryptionKey := securecookie.GenerateRandomKey(32)
+
+	cookieAuth, err := auth.NewCookieAuth("instance_session", [][]byte{secretKey, encryptionKey}, User{}, auth.CookieConfig{
+		ErrorHandler: errorCallback,
+		SkipAuth: func(c *rex.Context) bool {
+			return c.Path() == "/skip" || c.Path() == "/login"
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie auth: %v", err)
+	}
+
+	router := rex.NewRouter()
+	router.Use(cookieAuth.Middleware())
+
+	router.POST("/login", func(c *rex.Context) error {
+		return cookieAuth.SetState(c, User{Username: "instance"})
+	})
+
+	router.GET("/skip", func(c *rex.Context) error {
+		if !cookieAuth.Skipped(c) {
+			t.Fatal("expected auth to be skipped")
+		}
+		return c.String("skipped")
+	})
+
+	router.GET("/me", func(c *rex.Context) error {
+		state := cookieAuth.Value(c)
+		if state == nil {
+			t.Fatal("expected auth state")
+		}
+		return c.String(state.(User).Username)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/skip", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/login", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	cookies := w.Header()["Set-Cookie"]
+	if len(cookies) == 0 {
+		t.Fatal("expected Set-Cookie header")
+	}
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/me", nil)
+	req.Header.Add("Cookie", cookies[0])
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Body.String() != "instance" {
+		t.Fatalf("expected instance, got %s", w.Body.String())
+	}
+}
+
+func TestCookieAuthMultipleInstances(t *testing.T) {
+	keyA := securecookie.GenerateRandomKey(32)
+	keyB := securecookie.GenerateRandomKey(32)
+
+	authA, err := auth.NewCookieAuth("session_a", [][]byte{keyA}, User{}, auth.CookieConfig{
+		ErrorHandler: errorCallback,
+		SkipAuth: func(c *rex.Context) bool {
+			return c.Path() == "/login-a"
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie authA: %v", err)
+	}
+	authB, err := auth.NewCookieAuth("session_b", [][]byte{keyB}, User{}, auth.CookieConfig{
+		ErrorHandler: errorCallback,
+		SkipAuth: func(c *rex.Context) bool {
+			return c.Path() == "/login-b"
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to initialize cookie authB: %v", err)
+	}
+
+	router := rex.NewRouter()
+	router.Use(authA.Middleware())
+
+	router.POST("/login-a", func(c *rex.Context) error {
+		return authA.SetState(c, User{Username: "user-a"})
+	})
+
+	router.GET("/protected-a", func(c *rex.Context) error {
+		return c.String(authA.Value(c).(User).Username)
+	})
+
+	other := rex.NewRouter()
+	other.Use(authB.Middleware())
+	other.POST("/login-b", func(c *rex.Context) error {
+		return authB.SetState(c, User{Username: "user-b"})
+	})
+	other.GET("/protected-b", func(c *rex.Context) error {
+		return c.String(authB.Value(c).(User).Username)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/login-a", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	cookieA := w.Header().Get("Set-Cookie")
+	if cookieA == "" {
+		t.Fatal("expected cookie for authA")
+	}
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/protected-a", nil)
+	req.Header.Add("Cookie", cookieA)
+	router.ServeHTTP(w, req)
+	if w.Body.String() != "user-a" {
+		t.Fatalf("expected user-a, got %s", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/protected-b", nil)
+	req.Header.Add("Cookie", cookieA)
+	other.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when reusing authA cookie against authB, got %d", w.Code)
 	}
 }

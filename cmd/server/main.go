@@ -69,45 +69,53 @@ func APIHandler(c *rex.Context) error {
 }
 
 // Create a protected handler
-func protectedHandler(c *rex.Context) error {
-	state := auth.CookieValue(c)
-	user := state.(User)
-	res := fmt.Sprintf("Hello %s", user.Username)
-	return c.String(res)
+func protectedHandler(cookieAuth *auth.CookieAuth) rex.HandlerFunc {
+	return func(c *rex.Context) error {
+		state := cookieAuth.Value(c)
+		user := state.(User)
+		res := fmt.Sprintf("Hello %s", user.Username)
+		return c.String(res)
+	}
 }
 
 func authErrorCallback(c *rex.Context) error {
 	return c.Redirect("/login")
 }
 
-func renderLoginPage(c *rex.Context) error {
-	// if already logged in, redirect home
-	if v := auth.CookieValue(c); v != nil {
-		return c.Redirect("/")
-	}
+func renderLoginPage(cookieAuth *auth.CookieAuth) rex.HandlerFunc {
+	return func(c *rex.Context) error {
+		// if already logged in, redirect home
+		if v := cookieAuth.Value(c); v != nil {
+			return c.Redirect("/")
+		}
 
-	c.SetHeader("cache-control", "no-cache")
-	return c.Render("templates/login.html", rex.Map{})
+		c.SetHeader("cache-control", "no-cache")
+		return c.Render("templates/login.html", rex.Map{})
+	}
 }
 
-func performLogin(c *rex.Context) error {
-	var username, password string
-	username = c.FormValue("username")
-	password = c.FormValue("password")
+func performLogin(cookieAuth *auth.CookieAuth) rex.HandlerFunc {
+	return func(c *rex.Context) error {
+		var username, password string
+		username = c.FormValue("username")
+		password = c.FormValue("password")
 
-	// auth verification here
+		// auth verification here
 
-	user := User{Username: username, Password: password}
-	err := auth.SetAuthState(c, user)
-	if err != nil {
-		return err
+		user := User{Username: username, Password: password}
+		err := cookieAuth.SetState(c, user)
+		if err != nil {
+			return err
+		}
+		return c.Redirect("/protected", http.StatusSeeOther)
 	}
-	return c.Redirect("/protected", http.StatusSeeOther)
 }
 
-func logout(c *rex.Context) error {
-	auth.ClearAuthState(c)
-	return c.Redirect("/login")
+func logout(cookieAuth *auth.CookieAuth) rex.HandlerFunc {
+	return func(c *rex.Context) error {
+		cookieAuth.Clear(c)
+		return c.Redirect("/login")
+	}
 }
 
 // APIRoutes returns the registered routes as JSON.
@@ -128,30 +136,35 @@ func main() {
 	r := rex.NewRouter(routerOPtions...)
 	r.Use(logger.New(nil))
 
-	r.GET("/login", renderLoginPage)
-	r.POST("/login", performLogin)
-
 	// Routes below will require cookie auth.
 	// if login routes are defined below, we define a skipFunc and ignore them.
 	var secretKey = securecookie.GenerateRandomKey(64)
-	auth.InitializeCookieStore([][]byte{secretKey}, User{})
-	r.Use(auth.Cookie("rex_session_name", auth.CookieConfig{
+	cookieAuth, err := auth.NewCookieAuth("rex_session_name", [][]byte{secretKey}, User{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   int((24 * time.Hour).Seconds()),
 			Secure:   false,
 			SameSite: http.SameSiteStrictMode,
 		},
 		ErrorHandler: authErrorCallback,
-		SkipAuth:     nil,
-	}))
+		SkipAuth: func(c *rex.Context) bool {
+			return c.Path() == "/login"
+		},
+	})
+	if err != nil {
+		log.Fatalln("Failed to initialize cookie auth:", err)
+	}
+	r.Use(cookieAuth.Middleware())
+
+	r.GET("/login", renderLoginPage(cookieAuth))
+	r.POST("/login", performLogin(cookieAuth))
 
 	r.GET("/", HomeHandler)
 	r.GET("/about", AboutHandler)
 	r.GET("/api", APIHandler)
 	r.GET("/api/routes", APIRoutes)
 	r.GET("/doctor", NestedTemplate)
-	r.GET("/protected", protectedHandler)
-	r.POST("/logout", logout)
+	r.GET("/protected", protectedHandler(cookieAuth))
+	r.POST("/logout", logout(cookieAuth))
 
 	log.Println("Server started on 0.0.0.0:8080")
 	srv, err := rex.NewServer(":8080", r)

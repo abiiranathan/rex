@@ -932,10 +932,10 @@ func BenchmarkRouter(b *testing.B) {
 		return c.String("Hello World!")
 	})
 
-	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/benchmark", nil)
 
 	for b.Loop() {
+		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 	}
 }
