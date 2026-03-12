@@ -27,19 +27,20 @@ type local struct {
 
 // Context represents the context of the current HTTP request
 type Context struct {
-	Request      *http.Request       // Original Request object
-	Response     http.ResponseWriter // Wrapped Writer
-	rw           ResponseWriter
-	ctx          context.Context // Parent Context
-	router       *Router         // Instance of the Router.
-	inlineLocals [inlineLocalsCapacity]local
-	inlineLen    int
-	locals       map[string]any // Overflow or materialized locals map
-	redirectOpts RedirectOptions
-	hasRedirect  bool
-	err          error         // Tracks any error encountered in middleware
-	currentRoute *route        // The current route.
-	latency      time.Duration // Request latency tracked by router
+	Request        *http.Request       // Original Request object
+	Response       http.ResponseWriter // Wrapped Writer
+	rw             ResponseWriter
+	ctx            context.Context // Parent Context
+	router         *Router         // Instance of the Router.
+	inlineLocals   [inlineLocalsCapacity]local
+	locals         map[string]any // Overflow or materialized locals map
+	redirectOpts   RedirectOptions
+	currentRoute   *route        // The current route.
+	latency        time.Duration // Request latency tracked by router
+	err            error         // Tracks any error encountered in middleware
+	inlineLen      int
+	hasRedirect    bool
+	contentTypeSet bool // Tracks if Content-Type header has been set
 }
 
 // NewContext creates a new Context instance for the given request and response.
@@ -537,6 +538,15 @@ func (c *Context) StatusCode() int {
 		return wrapped.StatusCode()
 	}
 	return http.StatusOK
+}
+
+// SetContentType sets the Content-Type header for the response.
+func (c *Context) SetContentType(contentType string) {
+	if c.contentTypeSet {
+		return
+	}
+	c.Response.Header().Set("Content-Type", contentType)
+	c.contentTypeSet = true
 }
 
 // Latency returns the duration of the request including the time it took to write the response,
