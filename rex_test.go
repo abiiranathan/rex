@@ -549,6 +549,41 @@ func TestRouterChainMiddleware(t *testing.T) {
 	}
 }
 
+func TestRouteUseChaining(t *testing.T) {
+	r := rex.NewRouter()
+
+	r.GET("/route-use", func(c *rex.Context) error {
+		value, ok := c.Get("chain")
+		if !ok {
+			return c.String("missing")
+		}
+		return c.String(value.(string))
+	}).Use(func(next rex.HandlerFunc) rex.HandlerFunc {
+		return func(c *rex.Context) error {
+			c.Set("chain", "route")
+			return next(c)
+		}
+	}).Use(func(next rex.HandlerFunc) rex.HandlerFunc {
+		return func(c *rex.Context) error {
+			value, _ := c.Get("chain")
+			c.Set("chain", value.(string)+" middleware")
+			return next(c)
+		}
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/route-use", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	if w.Body.String() != "route middleware" {
+		t.Fatalf("expected route middleware, got %s", w.Body.String())
+	}
+}
+
 // test render with a base layout
 func TestRouterRenderWithBaseLayout(t *testing.T) {
 	templ, err := rex.ParseTemplates(
@@ -900,7 +935,7 @@ func BenchmarkRouter(b *testing.B) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/benchmark", nil)
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r.ServeHTTP(w, req)
 	}
 }
@@ -915,7 +950,7 @@ func BenchmarkRouterFullCycle(b *testing.B) {
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res, err := http.Get(ts.URL + "/benchmark-cycle")
 		if err != nil {
 			b.Fatal(err)
@@ -1318,9 +1353,10 @@ func BenchmarkRequestsPerSecond(b *testing.B) {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
+			MaxIdleConns:        300,
+			MaxIdleConnsPerHost: 300,
 			IdleConnTimeout:     90 * time.Second,
+			DisableCompression:  true, // saves CPU for plaintext benchmarks
 		},
 	}
 
@@ -1328,7 +1364,7 @@ func BenchmarkRequestsPerSecond(b *testing.B) {
 	b.ResetTimer()
 
 	// Run parallel benchmark
-	b.SetParallelism(4)
+	b.SetParallelism(32)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			res, err := client.Get(ts.URL + "/benchmark")
@@ -1340,12 +1376,9 @@ func BenchmarkRequestsPerSecond(b *testing.B) {
 			}
 
 			// Make sure to read and close the body to reuse connections
-			_, err = io.ReadAll(res.Body)
+			io.Copy(io.Discard, res.Body)
 			res.Body.Close()
 
-			if err != nil {
-				b.Fatal(err)
-			}
 		}
 	})
 }
@@ -1355,6 +1388,7 @@ func TestRequestsPerSecond(t *testing.T) {
 	result := testing.Benchmark(BenchmarkRequestsPerSecond)
 
 	// Calculate requests per second
+	// (with TCP overhead, so it's not a measure of pure handler performance, but rather real-world performance)
 	requestsPerSecond := float64(result.N) / result.T.Seconds()
 
 	t.Logf("Requests per second: %.2f", requestsPerSecond)

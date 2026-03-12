@@ -38,7 +38,7 @@ func (w *ResponseWriter) WriteHeader(status int) {
 // Calling this with a HEAD request will only write the headers if they haven't been written yet.
 func (w *ResponseWriter) Write(b []byte) (int, error) {
 	if !w.statusSent {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(w.status)
 	}
 
 	// If it's a HEAD request, we should skip the body
@@ -49,6 +49,21 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 	size, err := w.writer.Write(b)
 	w.size += size
 	return size, err
+}
+
+// WriteString writes a string response without forcing a string-to-byte allocation.
+func (w *ResponseWriter) WriteString(s string) (int, error) {
+	if !w.statusSent {
+		w.WriteHeader(w.status)
+	}
+
+	if w.skipBody {
+		return len(s), nil
+	}
+
+	n, err := io.WriteString(w.writer, s)
+	w.size += n
+	return n, err
 }
 
 // Status returns the recorded HTTP status code.
@@ -101,8 +116,7 @@ func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // The return value is the number of bytes written and an error, if any.
 func (w *ResponseWriter) ReadFrom(r io.Reader) (n int64, err error) {
 	if !w.statusSent {
-		// The status will be StatusOK if WriteHeader has not been called yet
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(w.status)
 	}
 
 	n, err = io.Copy(w.writer, r)
@@ -113,4 +127,12 @@ func (w *ResponseWriter) ReadFrom(r io.Reader) (n int64, err error) {
 // Unwrap exposes the underlying http.ResponseWriter for http.ResponseController support.
 func (w *ResponseWriter) Unwrap() http.ResponseWriter {
 	return w.writer
+}
+
+// SetStatus records a status code without writing headers immediately.
+func (w *ResponseWriter) SetStatus(status int) {
+	if w.statusSent {
+		return
+	}
+	w.status = status
 }

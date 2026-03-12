@@ -36,9 +36,21 @@ func (g *gzipWriter) WriteHeader(code int) {
 // Write compresses p and writes it to the underlying response.
 func (g *gzipWriter) Write(p []byte) (int, error) {
 	if !g.headerWritten {
-		g.WriteHeader(http.StatusOK)
+		code := g.status
+		if code == 0 {
+			code = http.StatusOK
+		}
+		g.WriteHeader(code)
 	}
 	return g.gw.Write(p)
+}
+
+// SetStatus records a status code without committing headers yet.
+func (g *gzipWriter) SetStatus(code int) {
+	if g.headerWritten {
+		return
+	}
+	g.status = code
 }
 
 // Flush flushes any buffered response data.

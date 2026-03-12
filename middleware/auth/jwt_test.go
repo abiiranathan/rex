@@ -47,9 +47,9 @@ func TestVerifyToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userId, ok := claims["payload"]
-	if !ok || userId != payload {
-		t.Fatalf("expected payload %s, got %s", payload, userId)
+	userID, ok := claims["payload"]
+	if !ok || userID != payload {
+		t.Fatalf("expected payload %s, got %s", payload, userID)
 	}
 
 	// Expired token

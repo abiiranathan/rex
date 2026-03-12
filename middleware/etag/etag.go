@@ -39,7 +39,9 @@ func (e *etagResponseWriter) WriteHeader(code int) {
 // Write buffers the response body while updating the ETag hash.
 func (e *etagResponseWriter) Write(p []byte) (int, error) {
 	if !e.written {
-		e.status = http.StatusOK
+		if e.status == 0 {
+			e.status = http.StatusOK
+		}
 		e.written = true
 	}
 
@@ -68,6 +70,14 @@ func (e *etagResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // Status returns the recorded HTTP status code.
 func (e *etagResponseWriter) Status() int {
 	return e.status
+}
+
+// SetStatus records a status code without committing headers yet.
+func (e *etagResponseWriter) SetStatus(code int) {
+	if e.written {
+		return
+	}
+	e.status = code
 }
 
 // New returns middleware that computes and validates ETag headers for cacheable responses.

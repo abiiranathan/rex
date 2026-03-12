@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -19,16 +18,28 @@ import (
 	"github.com/pkg/errors"
 )
 
+const inlineLocalsCapacity = 4
+
+type local struct {
+	k string
+	v any
+}
+
 // Context represents the context of the current HTTP request
 type Context struct {
 	Request      *http.Request       // Original Request object
 	Response     http.ResponseWriter // Wrapped Writer
-	ctx          context.Context     // Parent Context
-	router       *Router             // Instance of the Router.
-	locals       map[string]any      // Per-request context data
-	err          error               // Tracks any error encountered in middleware
-	currentRoute *route              // The current route.
-	latency      time.Duration       // Request latency tracked by router
+	rw           ResponseWriter
+	ctx          context.Context // Parent Context
+	router       *Router         // Instance of the Router.
+	inlineLocals [inlineLocalsCapacity]local
+	inlineLen    int
+	locals       map[string]any // Overflow or materialized locals map
+	redirectOpts RedirectOptions
+	hasRedirect  bool
+	err          error         // Tracks any error encountered in middleware
+	currentRoute *route        // The current route.
+	latency      time.Duration // Request latency tracked by router
 }
 
 // NewContext creates a new Context instance for the given request and response.
@@ -40,7 +51,6 @@ func NewContext(w http.ResponseWriter, r *http.Request, router *Router) *Context
 		Response: w,
 		ctx:      r.Context(),
 		router:   router,
-		locals:   make(map[string]any),
 	}
 }
 
@@ -71,7 +81,7 @@ func (c *Context) Err() error {
 // Value implements context.Context.
 func (c *Context) Value(key any) any {
 	if k, ok := key.(string); ok {
-		if v, exists := c.locals[k]; exists {
+		if v, exists := c.Get(k); exists {
 			return v
 		}
 	}
@@ -99,6 +109,11 @@ func (c *Context) GetHeader(key string) string {
 // Status sets the status code of the response and returns the context
 // allowing for chaining.
 func (c *Context) Status(status int) *Context {
+	if setter, ok := c.Response.(interface{ SetStatus(int) }); ok {
+		setter.SetStatus(status)
+		return c
+	}
+
 	c.Response.WriteHeader(status)
 	return c
 }
@@ -118,7 +133,7 @@ func (c *Context) XML(data any) error {
 // String sends a string response
 func (c *Context) String(text string) error {
 	c.Response.Header().Set("Content-Type", "text/plain")
-	_, err := c.Response.Write([]byte(text))
+	_, err := io.WriteString(c.Response, text)
 	return err
 }
 
@@ -162,10 +177,9 @@ func (c *Context) Send(data []byte) error {
 // Error sends an error response as plain text.
 // You can optionally pass a content type.
 // Status code is expected to be between 400 and 599.
-func (c *Context) Error(err error, status int, contentType ...string) {
+func (c *Context) Error(err error, status int, contentType ...string) error {
 	if status < 400 || status > 599 {
-		log.Println("status code must be between 400 and 599")
-		return
+		return fmt.Errorf("invalid status code %d", status)
 	}
 
 	if len(contentType) > 0 && contentType[0] != "" {
@@ -174,8 +188,9 @@ func (c *Context) Error(err error, status int, contentType ...string) {
 		c.Response.Header().Set("Content-Type", "text/plain")
 	}
 
-	c.Response.WriteHeader(status)
-	_, _ = c.Response.Write([]byte(err.Error()))
+	c.Status(status)
+	_, writeErr := c.Response.Write([]byte(err.Error()))
+	return writeErr
 }
 
 // Param gets a path parameter value by name from the request.
@@ -314,14 +329,39 @@ func (c *Context) QueryUInt(key string, defaults ...uint) uint {
 
 // Set stores a value in the context
 func (c *Context) Set(key string, value any) {
-	if c.locals == nil {
-		c.locals = make(map[string]any)
+	if c.locals != nil {
+		c.locals[key] = value
+		return
+	}
+
+	for i := 0; i < c.inlineLen; i++ {
+		if c.inlineLocals[i].k == key {
+			c.inlineLocals[i].v = value
+			return
+		}
+	}
+
+	if c.inlineLen < len(c.inlineLocals) {
+		c.inlineLocals[c.inlineLen] = local{k: key, v: value}
+		c.inlineLen++
+		return
+	}
+
+	c.locals = make(map[string]any, c.inlineLen+1)
+	for i := 0; i < c.inlineLen; i++ {
+		c.locals[c.inlineLocals[i].k] = c.inlineLocals[i].v
 	}
 	c.locals[key] = value
 }
 
 // Get retrieves a value from the context
 func (c *Context) Get(key string) (value any, exists bool) {
+	for i := 0; i < c.inlineLen; i++ {
+		if c.inlineLocals[i].k == key {
+			return c.inlineLocals[i].v, true
+		}
+	}
+
 	if c.locals == nil {
 		return nil, false
 	}
@@ -351,7 +391,10 @@ func (c *Context) GetOrEmpty(key string) any {
 // Locals returns the context values
 func (c *Context) Locals() map[string]any {
 	if c.locals == nil {
-		c.locals = make(map[string]any)
+		c.locals = make(map[string]any, c.inlineLen)
+		for i := 0; i < c.inlineLen; i++ {
+			c.locals[c.inlineLocals[i].k] = c.inlineLocals[i].v
+		}
 	}
 	return c.locals
 }

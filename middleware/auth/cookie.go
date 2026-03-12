@@ -223,9 +223,7 @@ func ClearAuthState(c *rex.Context) {
 
 	session, _ := store.Get(c.Request, rexSessionName)
 	// Clear values
-	for k := range session.Values {
-		delete(session.Values, k)
-	}
+	clear(session.Values)
 
 	// We expire the cookie explicitly using the store options to match Path and Domain
 	options := store.Options

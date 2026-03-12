@@ -38,9 +38,21 @@ func (b *brotliWriter) WriteHeader(code int) {
 // Write compresses p and writes it to the underlying response.
 func (b *brotliWriter) Write(p []byte) (int, error) {
 	if !b.headerWritten {
-		b.WriteHeader(http.StatusOK)
+		code := b.status
+		if code == 0 {
+			code = http.StatusOK
+		}
+		b.WriteHeader(code)
 	}
 	return b.bw.Write(p)
+}
+
+// SetStatus records a status code without committing headers yet.
+func (b *brotliWriter) SetStatus(code int) {
+	if b.headerWritten {
+		return
+	}
+	b.status = code
 }
 
 // Flush flushes any buffered response data.

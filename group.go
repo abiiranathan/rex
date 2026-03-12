@@ -38,28 +38,28 @@ func (g *Group) With(middlewares ...Middleware) *route {
 }
 
 // GET request.
-func (g *Group) GET(path string, handler HandlerFunc) {
-	g.router.handle(http.MethodGet, g.prefix+path, handler, false, g.middlewares...)
+func (g *Group) GET(path string, handler HandlerFunc) *route {
+	return g.router.handle(http.MethodGet, g.prefix+path, handler, false, g.middlewares...)
 }
 
 // POST request.
-func (g *Group) POST(path string, handler HandlerFunc) {
-	g.router.handle(http.MethodPost, g.prefix+path, handler, false, g.middlewares...)
+func (g *Group) POST(path string, handler HandlerFunc) *route {
+	return g.router.handle(http.MethodPost, g.prefix+path, handler, false, g.middlewares...)
 }
 
 // PUT request.
-func (g *Group) PUT(path string, handler HandlerFunc) {
-	g.router.handle(http.MethodPut, g.prefix+path, handler, false, g.middlewares...)
+func (g *Group) PUT(path string, handler HandlerFunc) *route {
+	return g.router.handle(http.MethodPut, g.prefix+path, handler, false, g.middlewares...)
 }
 
 // PATCH request.
-func (g *Group) PATCH(path string, handler HandlerFunc) {
-	g.router.handle(http.MethodPatch, g.prefix+path, handler, false, g.middlewares...)
+func (g *Group) PATCH(path string, handler HandlerFunc) *route {
+	return g.router.handle(http.MethodPatch, g.prefix+path, handler, false, g.middlewares...)
 }
 
 // DELETE request.
-func (g *Group) DELETE(path string, handler HandlerFunc) {
-	g.router.handle(http.MethodDelete, g.prefix+path, handler, false, g.middlewares...)
+func (g *Group) DELETE(path string, handler HandlerFunc) *route {
+	return g.router.handle(http.MethodDelete, g.prefix+path, handler, false, g.middlewares...)
 }
 
 // Group creates a nested group with the given prefix and middleware.

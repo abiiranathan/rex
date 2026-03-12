@@ -1,10 +1,11 @@
 package rex
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
-	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -102,11 +103,22 @@ func (c *Context) RenderError(w http.ResponseWriter, err error, status ...int) e
 	return c.renderErrorTemplate(err, status...)
 }
 
-// builderPool is a pool of strings.Builder to avoid allocations.
-var builderPool = sync.Pool{
+// bytesBufferPool is a pool of byte buffers to avoid massive allocations.
+var bytesBufferPool = sync.Pool{
 	New: func() any {
-		return new(strings.Builder)
+		return new(bytes.Buffer)
 	},
+}
+
+// returnBytesBuffer returns the buffer to the pool if its capacity is less than 64KB, otherwise it discards it.
+func returnBytesBuffer(byteBuffer *bytes.Buffer) {
+	if byteBuffer.Cap() > 64*1024 {
+		// Discard buffers that are too large to avoid memory bloat.
+		// pool will allocate a new one when needed
+		return
+	}
+	byteBuffer.Reset()
+	bytesBufferPool.Put(byteBuffer)
 }
 
 // renderTemplate renders the template with the given name and data.
@@ -119,32 +131,30 @@ func (c *Context) renderTemplate(name string, data Map) error {
 	c.SetHeader("Content-Type", "text/html")
 
 	if c.router.baseLayout != "" {
-		// Get a builder from the pool
-		builder := builderPool.Get().(*strings.Builder)
+		// Get a buf from the pool
+		buf := bytesBufferPool.Get().(*bytes.Buffer)
 
-		defer func() {
-			builder.Reset()
-			builderPool.Put(builder)
-		}()
+		defer returnBytesBuffer(buf)
 
 		// Execute the template into the pooled builder
-		if err := c.router.template.ExecuteTemplate(builder, name, data); err != nil {
+		if err := c.router.template.ExecuteTemplate(buf, name, data); err != nil {
 			return err
 		}
 
 		// Update the data map with the rendered content
-		data[c.router.contentBlock] = template.HTML(builder.String())
+		data[c.router.contentBlock] = template.HTML(buf.String())
 
-		// Reset the builder for reuse
-		builder.Reset()
+		// Reset the builder before executing the base layout template
+		// This is necessary to avoid appending to the existing content when executing the base layout template.
+		buf.Reset()
 
 		// Execute the base template
-		if err := c.router.template.ExecuteTemplate(builder, c.router.baseLayout, data); err != nil {
+		if err := c.router.template.ExecuteTemplate(buf, c.router.baseLayout, data); err != nil {
 			return err
 		}
 
-		// Write the final content
-		_, err := io.WriteString(c.Response, builder.String())
+		// Write the final content directly to the responsewriter without unnecessary allocations.
+		_, err := buf.WriteTo(c.Response)
 		return err
 	} else {
 		return c.router.template.ExecuteTemplate(c.Response, name, data)
@@ -162,9 +172,7 @@ func (c *Context) Render(name string, data Map) error {
 
 	// pass the request context to the views
 	if c.router.passContextToViews {
-		for k, v := range c.locals {
-			data[fmt.Sprintf("%v", k)] = v
-		}
+		maps.Copy(data, c.locals)
 	}
 	return c.renderTemplate(name, data)
 }
@@ -177,9 +185,7 @@ func (c *Context) ExecuteTemplate(name string, data Map) error {
 
 	// pass the request context to the views
 	if c.router.passContextToViews {
-		for k, v := range c.locals {
-			data[fmt.Sprintf("%v", k)] = v
-		}
+		maps.Copy(data, c.locals)
 	}
 	return c.router.template.ExecuteTemplate(c.Response, name, data)
 }
@@ -267,10 +273,6 @@ func ParseTemplatesFS(root fs.FS, rootDir string, funcMap template.FuncMap, suff
 		}
 
 		if !d.IsDir() && strings.HasSuffix(path, ext) {
-			if d != nil && d.IsDir() {
-				return nil
-			}
-
 			b, err := fs.ReadFile(root, path)
 			if err != nil {
 				return err

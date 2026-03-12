@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +118,34 @@ func TestQueryIntWithoutDefault(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Error("status code is not OK")
+	}
+}
+
+func TestStatusAllowsHeadersBeforeFirstWrite(t *testing.T) {
+	t.Parallel()
+
+	r := NewRouter()
+
+	r.GET("/status", func(c *Context) error {
+		c.Status(http.StatusCreated)
+		c.SetHeader("X-Test", "value")
+		return c.String("created")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/status", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
+	}
+
+	if rec.Header().Get("X-Test") != "value" {
+		t.Fatalf("expected X-Test header to be preserved, got %q", rec.Header().Get("X-Test"))
+	}
+
+	if !strings.Contains(rec.Body.String(), "created") {
+		t.Fatalf("expected body to contain created, got %q", rec.Body.String())
 	}
 }
 

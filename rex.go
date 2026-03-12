@@ -73,9 +73,32 @@ type Middleware func(HandlerFunc) HandlerFunc
 // Map is a convenience alias for template and JSON response data.
 type Map map[string]any
 
+var stdContextRegistry sync.Map
+
+func markNeedsStdContext(fn any) {
+	stdContextRegistry.Store(reflect.ValueOf(fn).Pointer(), struct{}{})
+}
+
+func needsStdContext(fn any) bool {
+	_, ok := stdContextRegistry.Load(reflect.ValueOf(fn).Pointer())
+	return ok
+}
+
+func handlerNeedsStdContext(handler HandlerFunc) bool {
+	return needsStdContext(handler)
+}
+
+func middlewareNeedsStdContext(middleware Middleware) bool {
+	return needsStdContext(middleware)
+}
+
+func middlewaresNeedStdContext(middlewares []Middleware) bool {
+	return slices.ContainsFunc(middlewares, middlewareNeedsStdContext)
+}
+
 // WrapHandler wraps an http.Handler to be used as a rex.HandlerFunc
 func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
-	return func(c *Context) error {
+	handler := func(c *Context) error {
 		// Set the request context to the rex context (which implements context.Context)
 		// This allows handlers to access locals via the context interface if needed.
 		// Note: c.Request.Context() is c.ctx (parent).
@@ -87,7 +110,7 @@ func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
 		// If an error was set in request context, return it
 		// We can access it directly from locals if it was set via SetError (which now uses locals)
 		// or check the fallback.
-		if v, exists := c.locals[string(contextErrorKey)]; exists {
+		if v, exists := c.Get(string(contextErrorKey)); exists {
 			if err, ok := v.(error); ok {
 				return err
 			}
@@ -103,6 +126,8 @@ func (r *Router) WrapHandler(h http.Handler) HandlerFunc {
 		// Propagate context error if any
 		return c.err
 	}
+	markNeedsStdContext(handler)
+	return handler
 }
 
 // Key for errors set inside http handlers without access to the context.
@@ -137,7 +162,7 @@ func (r *Router) ToHandler(h HandlerFunc) http.Handler {
 
 // WrapMiddleware wraps an http middleware to be used as a rex middleware.
 func (r *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Middleware {
-	return func(next HandlerFunc) HandlerFunc {
+	wrapped := func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				c.router = r
@@ -156,12 +181,14 @@ func (r *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Midd
 
 			// ServeHTTP with the CURRENT response writer.
 			// The middleware will wrap it and call our inner handler with the wrapped writer.
-			handler.ServeHTTP(c.Response, c.Request)
+			requestWithContext := c.Request.WithContext(c)
+			c.Request = requestWithContext
+			handler.ServeHTTP(c.Response, requestWithContext)
 
 			// If an error was set in request context, return it
 			// We can access it directly from locals if it was set via SetError (which now uses locals)
 			// or check the fallback.
-			if v, exists := c.locals[string(contextErrorKey)]; exists {
+			if v, exists := c.Get(string(contextErrorKey)); exists {
 				if err, ok := v.(error); ok {
 					return err
 				}
@@ -180,13 +207,17 @@ func (r *Router) WrapMiddleware(middleware func(http.Handler) http.Handler) Midd
 			return c.err
 		}
 	}
+	markNeedsStdContext(wrapped)
+	return wrapped
 }
 
 // Router is the main router structure
 type Router struct {
 	mux               *http.ServeMux    // http.ServeMux
 	routes            map[string]*route // map of routes
-	globalMiddlewares []Middleware      // global middlewares
+	routeList         []*route
+	routesByPath      map[string]*route
+	globalMiddlewares []Middleware // global middlewares
 
 	errorHandlerFunc func(*Context, error) // centralized error handler
 	errHandler       ErrorHandler          // Interface satisfying ErrorHandler, called inside errorHandlerFunc
@@ -267,6 +298,8 @@ func NewRouter(options ...RouterOption) *Router {
 	r := &Router{
 		mux:                http.NewServeMux(),
 		routes:             make(map[string]*route),
+		routeList:          make([]*route, 0, 16),
+		routesByPath:       make(map[string]*route),
 		passContextToViews: false,
 		baseLayout:         "",
 		contentBlock:       contentBlock,
@@ -281,36 +314,23 @@ func NewRouter(options ...RouterOption) *Router {
 		})),
 		errHandler: defaultErrorHandler,
 		errorHandlerFunc: func(c *Context, err error) {
-			// Log the error on exit to ensure that the correct status code is set.
-			defer func() {
-				// Skip logging if this returns true
-				if c.router.skipLog != nil && c.router.skipLog(c) {
-					return
-				}
-
-				args := make([]any, 0, 10)
-				if err != nil {
-					args = append(args, "error", err.Error())
-				}
-
-				args = append(args, "latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path())
-
-				if c.router.loggerCallback != nil {
-					userArgs := c.router.loggerCallback(c)
-					args = append(args, userArgs...)
-				}
-
-				if err != nil {
-					c.router.logger.Error("", args...)
-				} else {
-					c.router.logger.Debug("", args...)
-				}
-			}()
-
 			// We must return early if there is no error.
 			if err == nil {
 				return
 			}
+
+			// Log the error on exit to ensure that the correct status code is set.
+			defer func() {
+				if c.router.skipLog != nil && c.router.skipLog(c) {
+					return
+				}
+
+				args := []any{"error", err.Error(), "latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path()}
+				if c.router.loggerCallback != nil {
+					args = append(args, c.router.loggerCallback(c)...)
+				}
+				c.router.logger.Error("", args...)
+			}()
 
 			var rexErr *Error
 			if ve, ok := err.(validator.ValidationErrors); ok {
@@ -382,9 +402,7 @@ func (r *Router) Use(middlewares ...Middleware) {
 // Pool for reusing context objects
 var ctxPool = sync.Pool{
 	New: func() any {
-		return &Context{
-			locals: make(map[string]any),
-		}
+		return &Context{}
 	},
 }
 
@@ -403,10 +421,11 @@ func (r *Router) PutContext(c *Context) {
 func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context {
 	c := r.getContext()
 	c.Request = req
-	c.Response = &ResponseWriter{
+	c.rw = ResponseWriter{
 		writer: w,
 		status: http.StatusOK,
 	}
+	c.Response = &c.rw
 	c.router = r
 	c.ctx = req.Context() // Capture parent context
 	return c
@@ -416,47 +435,89 @@ func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context 
 func (c *Context) reset() {
 	c.Request = nil
 	c.Response = nil
+	c.rw = ResponseWriter{}
 	c.router = nil
 	c.currentRoute = nil
 	c.ctx = nil
-	// clear map but preserve capacity
-	for k := range c.locals {
-		delete(c.locals, k)
+	c.redirectOpts = RedirectOptions{}
+	c.hasRedirect = false
+	for i := 0; i < c.inlineLen; i++ {
+		c.inlineLocals[i] = local{}
 	}
+	c.inlineLen = 0
+	if c.locals != nil {
+		clear(c.locals)
+		c.locals = nil
+	}
+}
+
+func chainMiddlewares(globalMiddlewares, routeMiddlewares []Middleware, handler HandlerFunc) HandlerFunc {
+	switch {
+	case len(globalMiddlewares) == 0 && len(routeMiddlewares) == 0:
+		return handler
+	case len(routeMiddlewares) == 0:
+		return applyMiddlewareChain(globalMiddlewares, handler)
+	case len(globalMiddlewares) == 0:
+		return applyMiddlewareChain(routeMiddlewares, handler)
+	default:
+		all := make([]Middleware, 0, len(globalMiddlewares)+len(routeMiddlewares))
+		all = append(all, globalMiddlewares...)
+		all = append(all, routeMiddlewares...)
+		return applyMiddlewareChain(all, handler)
+	}
+}
+
+func applyMiddlewareChain(middlewares []Middleware, handler HandlerFunc) HandlerFunc {
+	if len(middlewares) == 0 {
+		return handler
+	}
+
+	wrapped := handler
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		wrapped = middlewares[i](wrapped)
+	}
+	return wrapped
+}
+
+func normalizePattern(pattern string, isStatic bool) (muxPattern, routePath string) {
+	if !isStatic && NoTrailingSlash && pattern != "/" {
+		pattern = strings.TrimSuffix(pattern, "/")
+	}
+
+	routePath = pattern
+	muxPattern = pattern
+	if StrictHome && pattern == "/" {
+		muxPattern = "/{$}"
+	}
+
+	return muxPattern, routePath
 }
 
 // handle registers a new route with the given path and handler
 func (r *Router) handle(method, pattern string, handler HandlerFunc, isStatic bool, middlewares ...Middleware) *route {
-	if StrictHome && pattern == "/" {
-		pattern = pattern + "{$}" // Match only the root pattern
-	}
-
-	// remove trailing slashes if not a static route
-	if !isStatic {
-		if NoTrailingSlash && pattern != "/" {
-			pattern = strings.TrimSuffix(pattern, "/")
-		}
-	}
-
-	// Combine global and route-specific middlewares
-	allMiddleware := append(r.globalMiddlewares, middlewares...)
-
-	// Chain all middleware
-	final := handler
-	for i := len(allMiddleware) - 1; i >= 0; i-- {
-		final = allMiddleware[i](final)
-	}
+	muxPattern, routePath := normalizePattern(pattern, isStatic)
+	globalMiddlewares := append([]Middleware(nil), r.globalMiddlewares...)
+	routeMiddlewares := append([]Middleware(nil), middlewares...)
 
 	// Store the route
-	routePattern := method + " " + pattern
+	routePattern := method + " " + muxPattern
 	newRoute := &route{
-		prefix:      routePattern,
-		handler:     final,
-		middlewares: middlewares,
-		router:      r,
+		prefix:            routePattern,
+		method:            method,
+		path:              routePath,
+		needsStdContext:   handlerNeedsStdContext(handler) || middlewaresNeedStdContext(globalMiddlewares) || middlewaresNeedStdContext(routeMiddlewares),
+		baseHandler:       handler,
+		middlewares:       routeMiddlewares,
+		globalMiddlewares: globalMiddlewares,
+		router:            r,
 	}
+	newRoute.handler = chainMiddlewares(globalMiddlewares, routeMiddlewares, handler)
 
 	r.routes[routePattern] = newRoute
+	r.routeList = append(r.routeList, newRoute)
+	if method == http.MethodGet {
+		r.routesByPath[routePath] = newRoute
+	}
 
 	r.mux.HandleFunc(routePattern, func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
@@ -466,9 +527,6 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, isStatic bo
 
 		// Track the current route.
 		ctx.currentRoute = newRoute
-
-		// Inject rex.Context into the request so it's available downstream
-		ctx.Request = ctx.Request.WithContext(ctx)
 
 		var skipBody bool
 		if req.Method != method {
@@ -488,7 +546,7 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, isStatic bo
 		ctx.SetSkipBody(skipBody)
 
 		// Execute the handler and handle any errors
-		err := final(ctx)
+		err := newRoute.execute(ctx)
 
 		end := time.Now()
 
@@ -506,48 +564,48 @@ func (r *Router) handle(method, pattern string, handler HandlerFunc, isStatic bo
 }
 
 // GET registers a GET route.
-func (r *Router) GET(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodGet, pattern, handler, false)
+func (r *Router) GET(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodGet, pattern, handler, false)
 }
 
 // POST registers a POST route.
-func (r *Router) POST(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodPost, pattern, handler, false)
+func (r *Router) POST(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodPost, pattern, handler, false)
 }
 
 // PUT registers a PUT route.
-func (r *Router) PUT(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodPut, pattern, handler, false)
+func (r *Router) PUT(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodPut, pattern, handler, false)
 }
 
 // PATCH registers a PATCH route.
-func (r *Router) PATCH(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodPatch, pattern, handler, false)
+func (r *Router) PATCH(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodPatch, pattern, handler, false)
 }
 
 // DELETE registers a DELETE route.
-func (r *Router) DELETE(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodDelete, pattern, handler, false)
+func (r *Router) DELETE(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodDelete, pattern, handler, false)
 }
 
 // OPTIONS registers an OPTIONS route.
-func (r *Router) OPTIONS(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodOptions, pattern, handler, false)
+func (r *Router) OPTIONS(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodOptions, pattern, handler, false)
 }
 
 // HEAD request.
-func (r *Router) HEAD(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodHead, pattern, handler, false)
+func (r *Router) HEAD(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodHead, pattern, handler, false)
 }
 
 // TRACE http request.
-func (r *Router) TRACE(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodTrace, pattern, handler, false)
+func (r *Router) TRACE(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodTrace, pattern, handler, false)
 }
 
 // CONNECT http request.
-func (r *Router) CONNECT(pattern string, handler HandlerFunc) {
-	r.handle(http.MethodConnect, pattern, handler, false)
+func (r *Router) CONNECT(pattern string, handler HandlerFunc) *route {
+	return r.handle(http.MethodConnect, pattern, handler, false)
 }
 
 // ServeHTTP implements the http.Handler interface
@@ -557,18 +615,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // chain of middlewares
 func (r *Router) chain(middlewares []Middleware, handler HandlerFunc) HandlerFunc {
-	if len(middlewares) == 0 {
-		return handler
-	}
-
-	// wrap the handler with the last middleware
-	wrapped := middlewares[len(middlewares)-1](handler)
-
-	// wrap the handler with the remaining middlewares
-	for i := len(middlewares) - 2; i >= 0; i-- {
-		wrapped = middlewares[i](wrapped)
-	}
-	return wrapped
+	return applyMiddlewareChain(middlewares, handler)
 }
 
 func staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
@@ -760,10 +807,6 @@ var defaultRedirectOptions = RedirectOptions{
 	QueryParams: make(map[string]string),
 }
 
-type redirectContextType string
-
-const redirectContextKey = redirectContextType("redirect")
-
 // RedirectRoute redirects the request to the given route.
 // The pathname is the name of the route to redirect to.
 // The options are the redirect options like status code, query parameters etc.
@@ -786,40 +829,24 @@ func (c *Context) RedirectRoute(pathname string, options ...RedirectOptions) err
 	}
 
 	// find the mathing route
-	var handler HandlerFunc
-
-	for _, route := range c.router.routes {
-		// we can only redirect to /GET routes
-		if route.prefix[:3] != http.MethodGet {
-			continue
-		}
-
-		// split prefix into method and path
-		parts := strings.Split(route.prefix, " ")
-		name := strings.TrimSpace(parts[1])
-		if name == pathname {
-			handler = route.handler
-			break
-		}
-	}
-
-	if handler == nil {
+	target, ok := c.router.routesByPath[pathname]
+	if !ok {
 		c.Response.WriteHeader(http.StatusNotFound)
 		return fmt.Errorf("route not found")
 	}
 
 	c.Response.WriteHeader(opts.Status)
-	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), redirectContextKey, opts))
-	return handler(c)
+	c.redirectOpts = opts
+	c.hasRedirect = true
+	return target.execute(c)
 }
 
 // Returns the redirect options set in the context when RedirectRoute is called.
 func (c *Context) redirectOptions() (RedirectOptions, bool) {
-	opts, ok := c.Request.Context().Value(redirectContextKey).(RedirectOptions)
-	if !ok {
-		return defaultRedirectOptions, false
+	if !c.hasRedirect {
+		return RedirectOptions{}, false
 	}
-	return opts, true
+	return c.redirectOpts, true
 }
 
 // RouteInfo contains information about a registered route.
@@ -831,10 +858,9 @@ type RouteInfo struct {
 
 // RegisteredRoutes returns a list of registered routes in a slice of RouteInfo.
 func (r *Router) RegisteredRoutes() []RouteInfo {
-	var routes []RouteInfo
-	for _, route := range r.routes {
-		parts := strings.SplitN(route.prefix, " ", 2)
-		routes = append(routes, RouteInfo{Method: parts[0], Path: parts[1], Handler: getFuncName(route.handler)})
+	routes := make([]RouteInfo, 0, len(r.routeList))
+	for _, route := range r.routeList {
+		routes = append(routes, RouteInfo{Method: route.method, Path: route.path, Handler: getFuncName(route.handler)})
 	}
 	return routes
 }
