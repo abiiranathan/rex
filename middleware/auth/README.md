@@ -11,58 +11,60 @@ go get -u github.com/abiiranathan/rex
 
 Basic usage:
 ```go
-	authMiddleware := auth.NewCookieAuth(
-		"session",
-		[][]byte{[]byte("your-32-byte-auth-key")},
-		User{},
-		auth.CookieConfig{
-			ErrorHandler: func(c *rex.Context) error {
-				return c.Status(http.StatusUnauthorized).JSON(map[string]string{
-					"error": "Unauthorized",
-				})
-			},
-		},
-	)
+authMiddleware, err := auth.NewCookieAuth(
+    "session",
+    [][]byte{[]byte("your-32-byte-auth-key")},
+    User{},
+    auth.CookieConfig{
+        ErrorHandler: func(c *rex.Context) error {
+            return c.Status(http.StatusUnauthorized).JSON(map[string]string{
+                "error": "Unauthorized",
+            })
+        },
+    },
+)
+if err != nil {
+    log.Fatalf("unable to initialize cookie auth: %v", err)
+}
 
-	// Use the middleware in your router
-	router := rex.NewRouter()
-	router.Use(authMiddleware.Middleware())
+// Use the middleware in your router
+router := rex.NewRouter()
+router.Use(authMiddleware.Middleware())
 ```
 Login example:
 
 ```go
-	router.Post("/login", func(c *rex.Context) error {
-		user := &User{ID: 1, Name: "John"}
-		if err := authMiddleware.SetState(c, user); err != nil {
-			return err
-		}
-		return c.JSON(user)
-	})
-
+router.Post("/login", func(c *rex.Context) error {
+    user := &User{ID: 1, Name: "John"}
+    if err := authMiddleware.SetState(c, user); err != nil {
+        return err
+    }
+    return c.JSON(user)
+})
 ```
 
 Access authenticated user:
 
 ```go
-	router.Get("/me", func(c *rex.Context) error {
-		state := authMiddleware.Value(c)
-		if state == nil {
-			return c.Status(http.StatusUnauthorized)
-		}
-		user := state.(*User)
-		return c.JSON(user)
-	})
-
+router.Get("/me", func(c *rex.Context) error {
+    state := authMiddleware.Value(c)
+    if state == nil {
+        return c.Status(http.StatusUnauthorized)
+    }
+    user := state.(*User)
+    return c.JSON(user)
+})
 ```
 
 Logout example:
 
 ```go
-	router.Post("/logout", func(c *rex.Context) error {
-		authMiddleware.Clear(c)
-		return c.Status(http.StatusNoContent)
-	})
-
+router.Post("/logout", func(c *rex.Context) error {
+    if err := authMiddleware.Clear(c); err != nil {
+        return err
+    }
+    return c.Status(http.StatusNoContent)
+})
 ```
 
 Security Notes:
@@ -84,36 +86,45 @@ Key Generation Example:
 For key rotation, you can provide multiple key pairs:
 
 ```go
-	authMiddleware := auth.NewCookieAuth("session", [][]byte{
-			[]byte("new-32-byte-auth-key"),
-			[]byte("new-32-byte-encrypt-key"),
-			[]byte("old-32-byte-auth-key"),
-			[]byte("old-32-byte-encrypt-key"),
-		}, User{}, auth.CookieConfig{/* ... */})
+authMiddleware, err := auth.NewCookieAuth("session", [][]byte{
+    []byte("new-32-byte-auth-key"),
+    []byte("new-32-byte-encrypt-key"),
+    []byte("old-32-byte-auth-key"),
+    []byte("old-32-byte-encrypt-key"),
+}, User{}, auth.CookieConfig{/* ... */})
+if err != nil {
+    log.Fatalf("unable to initialize cookie auth: %v", err)
+}
 ```
 
 Custom cookie options:
 
 ```go
-	authMiddleware := auth.NewCookieAuth("session", [][]byte{[]byte("your-32-byte-auth-key")}, User{}, auth.CookieConfig{
-		Options: &sessions.Options{
-			Path:     "/",
-			Domain:   "example.com",
-			MaxAge:   3600,
-			Secure:   true,
-		},
-	})
+authMiddleware, err := auth.NewCookieAuth("session", [][]byte{[]byte("your-32-byte-auth-key")}, User{}, auth.CookieConfig{
+    Options: &sessions.Options{
+        Path:   "/",
+        Domain: "example.com",
+        MaxAge: 3600,
+        Secure: true,
+    },
+})
+if err != nil {
+    log.Fatalf("unable to initialize cookie auth: %v", err)
+}
 ```
 
 Skip authentication for specific routes:
 
 ```go
-	authMiddleware := auth.NewCookieAuth("session", [][]byte{[]byte("your-32-or-64-byte-auth-key")}, User{}, auth.CookieConfig{
-		SkipAuth: func(c *rex.Context) bool {
-			return c.Path() == "/login" || c.Path() == "/signup"
-		},
-	})
-
+authMiddleware, err := auth.NewCookieAuth("session", [][]byte{[]byte("your-32-or-64-byte-auth-key")}, User{}, auth.CookieConfig{
+    SkipAuth: func(c *rex.Context) bool {
+        return c.Path() == "/login" || c.Path() == "/signup"
+    },
+})
+if err != nil {
+    log.Fatalf("unable to initialize cookie auth: %v", err)
+}
+```
 ```
 
 It also provides middleware for BasicAuth, JWT auth.
