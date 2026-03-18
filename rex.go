@@ -314,23 +314,27 @@ func NewRouter(options ...RouterOption) *Router {
 		})),
 		errHandler: defaultErrorHandler,
 		errorHandlerFunc: func(c *Context, err error) {
-			// We must return early if there is no error.
-			if err == nil {
-				return
-			}
-
 			// Log the error on exit to ensure that the correct status code is set.
 			defer func() {
 				if c.router.skipLog != nil && c.router.skipLog(c) {
 					return
 				}
 
-				args := []any{"error", err.Error(), "latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path()}
+				args := []any{"latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path()}
+				if err != nil {
+					args = append(args, "error", err.Error())
+				}
+
 				if c.router.loggerCallback != nil {
 					args = append(args, c.router.loggerCallback(c)...)
 				}
 				c.router.logger.Error("", args...)
 			}()
+
+			// We must return early if there is no error.
+			if err == nil {
+				return
+			}
 
 			var rexErr *Error
 			if ve, ok := err.(validator.ValidationErrors); ok {
