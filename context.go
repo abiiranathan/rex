@@ -18,13 +18,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const inlineLocalsCapacity = 4
-
-type local struct {
-	k string
-	v any
-}
-
 // Context represents the context of the current HTTP request
 type Context struct {
 	Request        *http.Request       // Original Request object
@@ -32,13 +25,11 @@ type Context struct {
 	rw             ResponseWriter
 	ctx            context.Context // Parent Context
 	router         *Router         // Instance of the Router.
-	inlineLocals   [inlineLocalsCapacity]local
-	locals         map[string]any // Overflow or materialized locals map
+	locals         map[string]any  // Overflow or materialized locals map
 	redirectOpts   RedirectOptions
 	currentRoute   *route        // The current route.
 	latency        time.Duration // Request latency tracked by router
 	err            error         // Tracks any error encountered in middleware
-	inlineLen      int
 	hasRedirect    bool
 	contentTypeSet bool // Tracks if Content-Type header has been set
 }
@@ -52,6 +43,7 @@ func NewContext(w http.ResponseWriter, r *http.Request, router *Router) *Context
 		Response: w,
 		ctx:      r.Context(),
 		router:   router,
+		locals:   make(map[string]any, 10),
 	}
 }
 
@@ -330,44 +322,27 @@ func (c *Context) QueryUInt(key string, defaults ...uint) uint {
 
 // Set stores a value in the context
 func (c *Context) Set(key string, value any) {
-	if c.locals != nil {
-		c.locals[key] = value
-		return
-	}
-
-	for i := 0; i < c.inlineLen; i++ {
-		if c.inlineLocals[i].k == key {
-			c.inlineLocals[i].v = value
-			return
-		}
-	}
-
-	if c.inlineLen < len(c.inlineLocals) {
-		c.inlineLocals[c.inlineLen] = local{k: key, v: value}
-		c.inlineLen++
-		return
-	}
-
-	c.locals = make(map[string]any, c.inlineLen+1)
-	for i := 0; i < c.inlineLen; i++ {
-		c.locals[c.inlineLocals[i].k] = c.inlineLocals[i].v
+	if c.locals == nil {
+		c.locals = make(map[string]any)
 	}
 	c.locals[key] = value
 }
 
 // Get retrieves a value from the context
 func (c *Context) Get(key string) (value any, exists bool) {
-	for i := 0; i < c.inlineLen; i++ {
-		if c.inlineLocals[i].k == key {
-			return c.inlineLocals[i].v, true
-		}
-	}
-
 	if c.locals == nil {
 		return nil, false
 	}
 	value, exists = c.locals[key]
 	return
+}
+
+// Locals returns the context values
+func (c *Context) Locals() map[string]any {
+	if c.locals == nil {
+		c.locals = make(map[string]any)
+	}
+	return c.locals
 }
 
 // MustGet retrieves a value from the context or panics if the key does not exist.
@@ -387,17 +362,6 @@ func (c *Context) GetOrEmpty(key string) any {
 		return nil
 	}
 	return value
-}
-
-// Locals returns the context values
-func (c *Context) Locals() map[string]any {
-	if c.locals == nil {
-		c.locals = make(map[string]any, c.inlineLen)
-		for i := 0; i < c.inlineLen; i++ {
-			c.locals[c.inlineLocals[i].k] = c.inlineLocals[i].v
-		}
-	}
-	return c.locals
 }
 
 // Redirect redirects the request to the given URL.

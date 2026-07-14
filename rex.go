@@ -445,13 +445,9 @@ func (c *Context) reset() {
 	c.ctx = nil
 	c.redirectOpts = RedirectOptions{}
 	c.hasRedirect = false
-	for i := 0; i < c.inlineLen; i++ {
-		c.inlineLocals[i] = local{}
-	}
-	c.inlineLen = 0
 	if c.locals != nil {
 		clear(c.locals)
-		c.locals = nil
+		// No need to set it to nil
 	}
 }
 
