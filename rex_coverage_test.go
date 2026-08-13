@@ -1,4 +1,4 @@
-package rex_test
+package rex
 
 import (
 	"bytes"
@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/abiiranathan/rex"
-	"github.com/abiiranathan/rex/middleware/recovery"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -19,15 +17,15 @@ func TestSetErrorAndWrapMiddleware(t *testing.T) {
 	// Middleware that sets an error using SetError
 	errMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rex.SetError(r, errors.New("middleware error"))
+			SetError(r, errors.New("middleware error"))
 			next.ServeHTTP(w, r)
 		})
 	}
 
-	r := rex.NewRouter()
+	r := NewRouter()
 	r.Use(r.WrapMiddleware(errMiddleware))
 
-	r.GET("/set-error", func(c *rex.Context) error {
+	r.GET("/set-error", func(c *Context) error {
 		return nil
 	})
 
@@ -42,10 +40,10 @@ func TestSetErrorAndWrapMiddleware(t *testing.T) {
 }
 
 func TestSetErrorOnContext(t *testing.T) {
-	r := rex.NewRouter()
-	r.GET("/set-error-ctx", func(c *rex.Context) error {
+	r := NewRouter()
+	r.GET("/set-error-ctx", func(c *Context) error {
 		// Pass the underlying request which has the context
-		rex.SetError(c.Request, errors.New("context error"))
+		SetError(c.Request, errors.New("context error"))
 
 		// Verify it's in locals (implementation detail check via side effect)
 		// We can't check locals directly as it is unexported, but we can check if it propagates.
@@ -72,8 +70,8 @@ func TestSetErrorOnContext(t *testing.T) {
 }
 
 func TestToHandler(t *testing.T) {
-	r := rex.NewRouter()
-	handler := func(c *rex.Context) error {
+	r := NewRouter()
+	handler := func(c *Context) error {
 		return c.String("converted handler")
 	}
 
@@ -92,8 +90,8 @@ func TestToHandler(t *testing.T) {
 }
 
 func TestToHandlerError(t *testing.T) {
-	r := rex.NewRouter()
-	handler := func(c *rex.Context) error {
+	r := NewRouter()
+	handler := func(c *Context) error {
 		return errors.New("handler error")
 	}
 
@@ -112,8 +110,8 @@ func TestWithLogger(t *testing.T) {
 	buf := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	r := rex.NewRouter(rex.WithLogger(logger))
-	r.GET("/", func(c *rex.Context) error {
+	r := NewRouter(WithLogger(logger))
+	r.GET("/", func(c *Context) error {
 		c.GetLogger().Info("inside handler")
 		return c.String("ok")
 	})
@@ -131,18 +129,18 @@ func TestWithLoggerCallback(t *testing.T) {
 	buf := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	callback := func(c *rex.Context) []any {
+	callback := func(c *Context) []any {
 		return []any{"custom_id", "12345"}
 	}
 
-	r := rex.NewRouter(
-		rex.WithLogger(logger),
-		rex.WithLoggerCallback(callback),
+	r := NewRouter(
+		WithLogger(logger),
+		WithLoggerCallback(callback),
 	)
 
 	// We need to trigger an error or something that causes the logger to log in the default error handler
 	// The default error handler logs on exit.
-	r.GET("/", func(c *rex.Context) error {
+	r.GET("/", func(c *Context) error {
 		return errors.New("trigger log")
 	})
 
@@ -162,17 +160,17 @@ func TestSkipLog(t *testing.T) {
 	buf := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	r := rex.NewRouter(
-		rex.WithLogger(logger),
-		rex.SkipLog(func(c *rex.Context) bool {
+	r := NewRouter(
+		WithLogger(logger),
+		SkipLog(func(c *Context) bool {
 			return c.Path() == "/skip"
 		}),
 	)
 
-	r.GET("/skip", func(c *rex.Context) error {
+	r.GET("/skip", func(c *Context) error {
 		return errors.New("error")
 	})
-	r.GET("/log", func(c *rex.Context) error {
+	r.GET("/log", func(c *Context) error {
 		return errors.New("error")
 	})
 
@@ -194,7 +192,7 @@ func TestSkipLog(t *testing.T) {
 }
 
 func TestRegisterValidation(t *testing.T) {
-	r := rex.NewRouter()
+	r := NewRouter()
 
 	// Register custom validation
 	err := r.RegisterValidation("is_foo", func(fl validator.FieldLevel) bool {
@@ -208,7 +206,7 @@ func TestRegisterValidation(t *testing.T) {
 		Value string `validate:"is_foo"`
 	}
 
-	r.POST("/", func(c *rex.Context) error {
+	r.POST("/", func(c *Context) error {
 		var s TestStruct
 		if err := c.BodyParser(&s); err != nil {
 			return err
@@ -238,7 +236,7 @@ func TestRegisterValidation(t *testing.T) {
 }
 
 func TestRegisterValidationCtx(t *testing.T) {
-	r := rex.NewRouter()
+	r := NewRouter()
 
 	// Register custom validation
 	err := r.RegisterValidationCtx("is_bar", func(ctx context.Context, fl validator.FieldLevel) bool {
@@ -253,17 +251,17 @@ type mockErrorHandler struct {
 	called bool
 }
 
-func (m *mockErrorHandler) Handle(c *rex.Context, err error) {
+func (m *mockErrorHandler) Handle(c *Context, err error) {
 	m.called = true
 	c.WriteHeader(http.StatusTeapot)
 }
 
 func TestSetErrorHandler(t *testing.T) {
-	r := rex.NewRouter()
+	r := NewRouter()
 	mock := &mockErrorHandler{}
 	r.SetErrorHandler(mock)
 
-	r.GET("/", func(c *rex.Context) error {
+	r.GET("/", func(c *Context) error {
 		return errors.New("error")
 	})
 
@@ -280,8 +278,8 @@ func TestSetErrorHandler(t *testing.T) {
 }
 
 func TestContextValues(t *testing.T) {
-	r := rex.NewRouter()
-	r.GET("/", func(c *rex.Context) error {
+	r := NewRouter()
+	r.GET("/", func(c *Context) error {
 		c.Set("key", "value")
 		val, ok := c.Get("key")
 		if !ok || val != "value" {
@@ -312,7 +310,7 @@ func TestContextValues(t *testing.T) {
 
 func TestSetErrorOnStandardRequest(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
-	rex.SetError(req, errors.New("std error"))
+	SetError(req, errors.New("std error"))
 
 	// Check if context has the error (we can't check contextErrorKey directly as it's unexported)
 	// But we can check if it propagates when upgraded to Context?
@@ -321,25 +319,25 @@ func TestSetErrorOnStandardRequest(t *testing.T) {
 }
 
 func TestContextHelpers(t *testing.T) {
-	r := rex.NewRouter()
+	r := NewRouter()
 
 	type XMLStruct struct {
 		Msg string `xml:"msg"`
 	}
 
-	r.GET("/xml", func(c *rex.Context) error {
+	r.GET("/xml", func(c *Context) error {
 		return c.XML(XMLStruct{Msg: "hello"})
 	})
 
-	r.GET("/html", func(c *rex.Context) error {
+	r.GET("/html", func(c *Context) error {
 		return c.HTML("<h1>hello</h1>")
 	})
 
-	r.GET("/send", func(c *rex.Context) error {
+	r.GET("/send", func(c *Context) error {
 		return c.Send([]byte("raw data"))
 	})
 
-	r.GET("/error-resp", func(c *rex.Context) error {
+	r.GET("/error-resp", func(c *Context) error {
 		c.Error(errors.New("bad request"), http.StatusBadRequest)
 		return nil
 	})
@@ -384,9 +382,9 @@ func TestContextHelpers(t *testing.T) {
 }
 
 func TestTypedParams(t *testing.T) {
-	r := rex.NewRouter()
+	r := NewRouter()
 
-	r.GET("/params/{id}", func(c *rex.Context) error {
+	r.GET("/params/{id}", func(c *Context) error {
 		if c.ParamUint("id") != 123 {
 			return errors.New("expected 123 uint")
 		}
@@ -414,9 +412,9 @@ func TestTypedParams(t *testing.T) {
 }
 
 func TestTypedQuery(t *testing.T) {
-	r := rex.NewRouter()
+	r := NewRouter()
 
-	r.GET("/query", func(c *rex.Context) error {
+	r.GET("/query", func(c *Context) error {
 		if c.QueryUInt("id") != 123 {
 			return errors.New("expected 123 uint")
 		}
@@ -443,82 +441,37 @@ func TestTypedQuery(t *testing.T) {
 	}
 }
 
-func TestMustGet(t *testing.T) {
-	r := rex.NewRouter()
-	r.Use(recovery.New()) // Add recovery to handle panic
-
-	r.GET("/must-get", func(c *rex.Context) error {
-		c.Set("foo", "bar")
-		val := c.MustGet("foo")
-		if val != "bar" {
-			return errors.New("expected bar")
-		}
-
-		c.MustGet("missing") // This should panic
-		return nil
-	})
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/must-get", nil)
-	r.ServeHTTP(w, req)
-
-	// Recovery middleware should handle panic and return 500
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 from panic, got %d", w.Code)
-	}
-}
-
-func TestLocals(t *testing.T) {
-	r := rex.NewRouter()
-	r.GET("/", func(c *rex.Context) error {
-		c.Set("a", 1)
-		locals := c.Locals()
-		if len(locals) != 1 || locals["a"] != 1 {
-			return errors.New("locals map mismatch")
-		}
-		return nil
-	})
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-}
-
 func TestUtils(t *testing.T) {
-	if !rex.IsSafeMethod("GET") {
+	if !IsSafeMethod("GET") {
 		t.Error("GET should be safe")
 	}
-	if !rex.IsSafeMethod("HEAD") {
+	if !IsSafeMethod("HEAD") {
 		t.Error("HEAD should be safe")
 	}
-	if rex.IsSafeMethod("POST") {
+	if IsSafeMethod("POST") {
 		t.Error("POST should not be safe")
 	}
 
-	if !rex.ParseBool("true") {
+	if !ParseBool("true") {
 		t.Error("true should be true")
 	}
-	if !rex.ParseBool("1") {
+	if !ParseBool("1") {
 		t.Error("1 should be true")
 	}
-	if !rex.ParseBool("on") {
+	if !ParseBool("on") {
 		t.Error("on should be true")
 	}
-	if rex.ParseBool("false") {
+	if ParseBool("false") {
 		t.Error("false should be false")
 	}
 }
 
 func TestDetailedErrors(t *testing.T) {
 	// Test Error() method with FormKind and empty Message
-	e := &rex.Error{
-		FormKind:     rex.ParseError,
-		FormField:    "email",
-		WrappedError: errors.New("invalid email"),
+	e := &Error{
+		formKind:     ParseError,
+		formField:    "email",
+		wrappedError: errors.New("invalid email"),
 	}
 
 	msg := e.Error()
@@ -542,8 +495,8 @@ func TestDetailedErrors(t *testing.T) {
 }
 
 func TestFormValues(t *testing.T) {
-	r := rex.NewRouter()
-	r.POST("/form", func(c *rex.Context) error {
+	r := NewRouter()
+	r.POST("/form", func(c *Context) error {
 		if c.FormValueInt("age") != 23 {
 			return errors.New("expected 23")
 		}

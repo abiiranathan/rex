@@ -41,7 +41,7 @@ func main() {
 	mux.Use(logger.New(logger.DefaultConfig))
 	mux.Use(etag.New())
 	mux.Use(cors.New())
-	mux.Use(brotli.Brotli())
+	mux.Use(brotli.Brotli(-1))
 
 	// Create a cookie store.
 	var store = sessions.NewCookieStore([]byte("secret key"))

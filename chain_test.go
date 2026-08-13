@@ -50,7 +50,7 @@ func TestChainedMiddleware(t *testing.T) {
 	// Request -> Brotli (sets up writer) -> ETag (sets up writer) -> Auth -> Handler
 	// Response: Handler writes -> ETag buffers -> ETag writes to Brotli -> Brotli compresses -> Response
 
-	r.Use(brotli.Brotli())
+	r.Use(brotli.Brotli(-1))
 	r.Use(etag.New())
 
 	r.Use(cookieAuth.Middleware())

@@ -18,7 +18,19 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Context represents the context of the current HTTP request
+// Context represents the context of the current HTTP request.
+//
+// *Context is pooled and reset after the handler returns (see Router.PutContext).
+// It is safe to pass as a context.Context to synchronous calls that complete
+// within the handler (database queries, outbound HTTP requests you wait on,
+// validator functions, etc.).
+//
+// Do NOT retain *Context or pass it into a goroutine, channel, or callback that
+// may run after the handler returns — the underlying locals map and parent
+// context get reset and reused for a different request, which is a data race.
+// If you need to do async work, extract what you need first (e.g. copy values
+// out of Locals(), or use context.WithoutCancel(c) / c.Request.Context() for
+// cancellation semantics only) before spawning the goroutine.
 type Context struct {
 	Request        *http.Request       // Original Request object
 	Response       http.ResponseWriter // Wrapped Writer
@@ -32,6 +44,7 @@ type Context struct {
 	err            error         // Tracks any error encountered in middleware
 	hasRedirect    bool
 	contentTypeSet bool // Tracks if Content-Type header has been set
+	recycled       bool // set true by reset(); guards against use-after-recycle
 }
 
 // NewContext creates a new Context instance for the given request and response.
@@ -43,7 +56,7 @@ func NewContext(w http.ResponseWriter, r *http.Request, router *Router) *Context
 		Response: w,
 		ctx:      r.Context(),
 		router:   router,
-		locals:   make(map[string]any, 10),
+		locals:   make(map[string]any, 16),
 	}
 }
 
@@ -73,8 +86,12 @@ func (c *Context) Err() error {
 
 // Value implements context.Context.
 func (c *Context) Value(key any) any {
-	if k, ok := key.(string); ok {
-		if v, exists := c.Get(k); exists {
+	if c.recycled {
+		panic("rex: Context used after being returned to the pool — do not retain *Context past handler return")
+	}
+
+	if key, ok := key.(string); ok {
+		if v, exists := c.Get(key); exists {
 			return v
 		}
 	}

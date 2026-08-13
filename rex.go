@@ -310,7 +310,13 @@ func NewRouter(options ...RouterOption) *Router {
 		validator:          validator.New(validator.WithRequiredStructEnabled()),
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: false,
-			Level:     slog.LevelError,
+			Level:     slog.LevelInfo,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.MessageKey {
+					return slog.Attr{} // drop it
+				}
+				return a
+			},
 		})),
 		errHandler: defaultErrorHandler,
 		errorHandlerFunc: func(c *Context, err error) {
@@ -320,15 +326,19 @@ func NewRouter(options ...RouterOption) *Router {
 					return
 				}
 
+				level := slog.LevelInfo
+				if err != nil {
+					level = slog.LevelError
+				}
+
 				args := []any{"latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path()}
 				if err != nil {
 					args = append(args, "error", err.Error())
 				}
-
 				if c.router.loggerCallback != nil {
 					args = append(args, c.router.loggerCallback(c)...)
 				}
-				c.router.logger.Error("", args...)
+				c.router.logger.Log(context.Background(), level, "", args...)
 			}()
 
 			// We must return early if there is no error.
@@ -341,14 +351,15 @@ func NewRouter(options ...RouterOption) *Router {
 				rexErr = ValidationErr(c.TranslateErrors(ve))
 			} else if fe, ok := err.(FormError); ok {
 				rexErr = FormErr(fe)
+			} else if re, ok := err.(*Error); ok {
+				rexErr = re
 			} else {
 				// For generic errors, wrap it in our new Error struct.
-				// Use existing status code from context if it's an error status, otherwise default to 500.
 				var defaultStatusCode = http.StatusInternalServerError
 				if c.StatusCode() >= http.StatusBadRequest && c.StatusCode() <= http.StatusNetworkAuthenticationRequired {
 					defaultStatusCode = c.StatusCode()
 				}
-				rexErr = &Error{Code: defaultStatusCode, WrappedError: err}
+				rexErr = &Error{Code: defaultStatusCode, wrappedError: err}
 			}
 			c.router.errHandler.Handle(c, rexErr)
 		},
@@ -424,6 +435,7 @@ func (r *Router) PutContext(c *Context) {
 // InitContext gets a Context from the pool and initializes it with the request and writer.
 func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context {
 	c := r.getContext()
+	c.recycled = false
 	c.Request = req
 	c.rw = ResponseWriter{
 		writer: w,
@@ -432,6 +444,7 @@ func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context 
 	c.Response = &c.rw
 	c.router = r
 	c.ctx = req.Context() // Capture parent context
+	c.locals = nil        // don't pre-allocate map of every request unless required.
 	return c
 }
 
@@ -449,6 +462,7 @@ func (c *Context) reset() {
 		clear(c.locals)
 		// No need to set it to nil
 	}
+	c.recycled = true
 }
 
 func chainMiddlewares(globalMiddlewares, routeMiddlewares []Middleware, handler HandlerFunc) HandlerFunc {
