@@ -11,6 +11,7 @@ import (
 )
 
 func TestTestHandler_WithTemplate(t *testing.T) {
+	t.Parallel()
 	// Create a dummy handler that renders a template
 	handler := func(c *rex.Context) error {
 		return c.Render("index.html", rex.Map{"Name": "World"})
@@ -41,6 +42,7 @@ func TestTestHandler_WithTemplate(t *testing.T) {
 }
 
 func TestTestHandler_WithParam(t *testing.T) {
+	t.Parallel()
 	// Handler using param
 	handler := func(c *rex.Context) error {
 		return c.String("Hello " + c.Param("name"))
@@ -61,6 +63,7 @@ func TestTestHandler_WithParam(t *testing.T) {
 }
 
 func TestTest_Integration(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/ping", func(c *rex.Context) error {
 		return c.String("pong")
@@ -83,6 +86,7 @@ func TestTest_Integration(t *testing.T) {
 }
 
 func TestTestHandler_Error(t *testing.T) {
+	t.Parallel()
 	handler := func(c *rex.Context) error {
 		return fmt.Errorf("oops")
 	}

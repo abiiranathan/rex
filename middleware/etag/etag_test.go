@@ -12,6 +12,7 @@ import (
 )
 
 func TestEtag(t *testing.T) {
+	t.Parallel()
 	router := rex.NewRouter()
 	router.Use(etag.New())
 	res := "Hello World!"

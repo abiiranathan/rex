@@ -28,6 +28,7 @@ func testMiddleware(method, url string, body string, cookie *http.Cookie, handle
 
 // Test that the CSRF token is generated and set in the cookie.
 func TestCSRFTokenGeneration(t *testing.T) {
+	t.Parallel()
 	router := rex.NewRouter()
 	router.Use(csrf.New(true))
 
@@ -72,6 +73,7 @@ func testPOSTRequestWithForm(urlPath string, formData url.Values, cookie *http.C
 
 // Test that the CSRF token is validated correctly.
 func TestCSRFTokenValidationSuccess(t *testing.T) {
+	t.Parallel()
 	// Create a valid CSRF token and set it in the cookie.
 	token, err := csrf.CreateToken()
 	require.NoError(t, err)
@@ -100,6 +102,7 @@ func TestCSRFTokenValidationSuccess(t *testing.T) {
 
 // Test that CSRF token validation fails when the token is missing.
 func TestCSRFTokenValidationFailure_MissingToken(t *testing.T) {
+	t.Parallel()
 	router := rex.NewRouter()
 	router.Use(csrf.New(false))
 
@@ -117,6 +120,7 @@ func TestCSRFTokenValidationFailure_MissingToken(t *testing.T) {
 
 // Test that CSRF validation fails if the token in the request doesn't match the cookie.
 func TestCSRFTokenValidationFailure_InvalidToken(t *testing.T) {
+	t.Parallel()
 	// Create a valid token and a mismatched token for the request.
 	validToken, err := csrf.CreateToken()
 	require.NoError(t, err)
@@ -144,6 +148,7 @@ func TestCSRFTokenValidationFailure_InvalidToken(t *testing.T) {
 
 // Test that safe HTTP methods (GET, HEAD) bypass CSRF validation.
 func TestSafeMethodsBypassCSRFValidation(t *testing.T) {
+	t.Parallel()
 	router := rex.NewRouter()
 	router.Use(csrf.New(false))
 
@@ -165,6 +170,7 @@ func TestSafeMethodsBypassCSRFValidation(t *testing.T) {
 
 // Test that CSRF failures flow through the rex error pipeline as *rex.Error.
 func TestCSRFValidationErrorIsRexError(t *testing.T) {
+	t.Parallel()
 	var captured error
 
 	router := rex.NewRouter()

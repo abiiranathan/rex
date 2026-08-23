@@ -11,6 +11,7 @@ import (
 )
 
 func TestWithStrictHome(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter(rex.WithStrictHome(false))
 	r.GET("/", func(c *rex.Context) error { return c.String("home") })
 
@@ -25,6 +26,7 @@ func TestWithStrictHome(t *testing.T) {
 }
 
 func TestWithNoTrailingSlashDisabled(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter(rex.WithNoTrailingSlash(false))
 	r.GET("/path/", func(c *rex.Context) error { return c.String("ok") })
 
@@ -35,6 +37,7 @@ func TestWithNoTrailingSlashDisabled(t *testing.T) {
 }
 
 func TestParamUintRejectsNegative(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/items/{id}", func(c *rex.Context) error {
 		return c.JSON(rex.Map{"id": c.ParamUint("id", 42)})
@@ -53,6 +56,7 @@ func TestParamUintRejectsNegative(t *testing.T) {
 }
 
 func TestQueryUIntRejectsNegative(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/search", func(c *rex.Context) error {
 		return c.JSON(rex.Map{"page": c.QueryUInt("page", 1)})
@@ -65,6 +69,7 @@ func TestQueryUIntRejectsNegative(t *testing.T) {
 }
 
 func TestIPUntrustedProxyHeadersIgnored(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/ip", func(c *rex.Context) error {
 		ip, err := c.IP()
@@ -84,6 +89,7 @@ func TestIPUntrustedProxyHeadersIgnored(t *testing.T) {
 }
 
 func TestIPTrustedProxyHeadersHonored(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter(rex.WithTrustProxy("192.0.2.0/24"))
 	r.GET("/ip", func(c *rex.Context) error {
 		ip, err := c.IP()
@@ -127,6 +133,7 @@ func TestIPTrustedProxyHeadersHonored(t *testing.T) {
 }
 
 func TestIPTrustedBareIP(t *testing.T) {
+	t.Parallel()
 	// Bare IPs should be accepted by WithTrustProxy without CIDR notation.
 	r := rex.NewRouter(rex.WithTrustProxy("192.0.2.1", "::1"))
 	r.GET("/ip", func(c *rex.Context) error {
@@ -144,12 +151,14 @@ func TestIPTrustedBareIP(t *testing.T) {
 }
 
 func TestWithTrustProxyPanicsOnInvalidCIDR(t *testing.T) {
+	t.Parallel()
 	require.Panics(t, func() {
 		rex.NewRouter(rex.WithTrustProxy("not-a-cidr"))
 	})
 }
 
 func TestServeMinifiedOption(t *testing.T) {
+	t.Parallel()
 	dirname := t.TempDir()
 
 	write := func(name, content string) {

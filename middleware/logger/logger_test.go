@@ -27,6 +27,7 @@ func setupRouterWithLogger(t *testing.T, cfg *Config) (*rex.Router, *bytes.Buffe
 }
 
 func TestLogger_TextFormat_Basic(t *testing.T) {
+	t.Parallel()
 	r, buf := setupRouterWithLogger(t, &Config{Format: TextFormat})
 	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
 	w := httptest.NewRecorder()
@@ -43,6 +44,7 @@ func TestLogger_TextFormat_Basic(t *testing.T) {
 }
 
 func TestLogger_JSONFormat_Basic(t *testing.T) {
+	t.Parallel()
 	r, buf := setupRouterWithLogger(t, &Config{Format: JSONFormat})
 	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
 	w := httptest.NewRecorder()
@@ -79,6 +81,7 @@ func TestLogger_JSONFormat_Basic(t *testing.T) {
 }
 
 func TestLogger_SkipPath(t *testing.T) {
+	t.Parallel()
 	cfg := &Config{Skip: []string{"/hello"}}
 	r, buf := setupRouterWithLogger(t, cfg)
 	w := httptest.NewRecorder()
@@ -91,6 +94,7 @@ func TestLogger_SkipPath(t *testing.T) {
 }
 
 func TestLogger_SkipIf(t *testing.T) {
+	t.Parallel()
 	cfg := &Config{SkipIf: func(r *http.Request) bool { return r.URL.Path == "/hello" }}
 	r, buf := setupRouterWithLogger(t, cfg)
 	w := httptest.NewRecorder()
@@ -103,6 +107,7 @@ func TestLogger_SkipIf(t *testing.T) {
 }
 
 func TestLogger_Flags_IP_UserAgent_Latency(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	cfg := &Config{Format: TextFormat, Flags: LogIP | LogUserAgent | LogLatency, Output: &buf}
 	// Trust the direct peer so the X-Real-Ip header is honored.
@@ -132,6 +137,7 @@ func TestLogger_Flags_IP_UserAgent_Latency(t *testing.T) {
 }
 
 func TestLogger_Callback_AppendsArgs(t *testing.T) {
+	t.Parallel()
 	cfg := &Config{Format: TextFormat, Callback: func(c *rex.Context, args ...any) []any {
 		return append(args, "request_id", "abc123")
 	}}
@@ -147,6 +153,7 @@ func TestLogger_Callback_AppendsArgs(t *testing.T) {
 }
 
 func TestLogger_Callback_OddArgs_Panics(t *testing.T) {
+	t.Parallel()
 	cfg := &Config{Format: TextFormat, Callback: func(c *rex.Context, args ...any) []any {
 		// Append an odd key without value to trigger panic
 		return append(args, "odd-key-only")

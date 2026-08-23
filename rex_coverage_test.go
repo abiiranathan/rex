@@ -14,6 +14,7 @@ import (
 )
 
 func TestSetErrorAndWrapMiddleware(t *testing.T) {
+	t.Parallel()
 	// Middleware that sets an error using SetError
 	errMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +41,7 @@ func TestSetErrorAndWrapMiddleware(t *testing.T) {
 }
 
 func TestSetErrorOnContext(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.GET("/set-error-ctx", func(c *Context) error {
 		// Pass the underlying request which has the context
@@ -70,6 +72,7 @@ func TestSetErrorOnContext(t *testing.T) {
 }
 
 func TestToHandler(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	handler := func(c *Context) error {
 		return c.String("converted handler")
@@ -90,6 +93,7 @@ func TestToHandler(t *testing.T) {
 }
 
 func TestToHandlerError(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	handler := func(c *Context) error {
 		return errors.New("handler error")
@@ -107,6 +111,7 @@ func TestToHandlerError(t *testing.T) {
 }
 
 func TestWithLogger(t *testing.T) {
+	t.Parallel()
 	buf := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
@@ -126,6 +131,7 @@ func TestWithLogger(t *testing.T) {
 }
 
 func TestWithLoggerCallback(t *testing.T) {
+	t.Parallel()
 	buf := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
@@ -157,6 +163,7 @@ func TestWithLoggerCallback(t *testing.T) {
 }
 
 func TestSkipLog(t *testing.T) {
+	t.Parallel()
 	buf := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
@@ -192,6 +199,7 @@ func TestSkipLog(t *testing.T) {
 }
 
 func TestRegisterValidation(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 
 	// Register custom validation
@@ -236,6 +244,7 @@ func TestRegisterValidation(t *testing.T) {
 }
 
 func TestRegisterValidationCtx(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 
 	// Register custom validation
@@ -257,6 +266,7 @@ func (m *mockErrorHandler) Handle(c *Context, err error) {
 }
 
 func TestSetErrorHandler(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	mock := &mockErrorHandler{}
 	r.SetErrorHandler(mock)
@@ -278,6 +288,7 @@ func TestSetErrorHandler(t *testing.T) {
 }
 
 func TestContextValues(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.GET("/", func(c *Context) error {
 		c.Set("key", "value")
@@ -309,6 +320,7 @@ func TestContextValues(t *testing.T) {
 }
 
 func TestSetErrorOnStandardRequest(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/", nil)
 	SetError(req, errors.New("std error"))
 
@@ -319,6 +331,7 @@ func TestSetErrorOnStandardRequest(t *testing.T) {
 }
 
 func TestContextHelpers(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 
 	type XMLStruct struct {
@@ -382,6 +395,7 @@ func TestContextHelpers(t *testing.T) {
 }
 
 func TestTypedParams(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 
 	r.GET("/params/{id}", func(c *Context) error {
@@ -412,6 +426,7 @@ func TestTypedParams(t *testing.T) {
 }
 
 func TestTypedQuery(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 
 	r.GET("/query", func(c *Context) error {
@@ -442,6 +457,7 @@ func TestTypedQuery(t *testing.T) {
 }
 
 func TestUtils(t *testing.T) {
+	t.Parallel()
 	if !IsSafeMethod("GET") {
 		t.Error("GET should be safe")
 	}
@@ -467,6 +483,7 @@ func TestUtils(t *testing.T) {
 }
 
 func TestDetailedErrors(t *testing.T) {
+	t.Parallel()
 	// Test Error() method with FormKind and empty Message
 	e := &Error{
 		formKind:     ParseError,
@@ -495,6 +512,7 @@ func TestDetailedErrors(t *testing.T) {
 }
 
 func TestFormValues(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.POST("/form", func(c *Context) error {
 		if c.FormValueInt("age") != 23 {

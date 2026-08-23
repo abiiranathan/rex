@@ -15,6 +15,7 @@ import (
 // TestInitContextZeroesFields exercises InitContext directly on a dirty,
 // recycled context to prove no state leaks between requests.
 func TestInitContextZeroesFields(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 
 	c := r.InitContext(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
@@ -43,6 +44,7 @@ func TestInitContextZeroesFields(t *testing.T) {
 // the pool repeatedly; a stale c.err or contentTypeSet would surface as a
 // wrong status here.
 func TestPooledRequestsNoStaleError(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.GET("/fail", func(c *Context) error { return errors.New("boom") })
 	r.GET("/ok", func(c *Context) error {
@@ -74,6 +76,7 @@ func TestPooledRequestsNoStaleError(t *testing.T) {
 // TestRedirectRouteAppliesStatusAfterTarget verifies redirect semantics
 // without superfluous WriteHeader calls.
 func TestRedirectRouteAppliesStatusAfterTarget(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.GET("/target", func(c *Context) error {
 		// Writes a body without sending a status explicitly.
@@ -111,6 +114,7 @@ func TestRedirectRouteAppliesStatusAfterTarget(t *testing.T) {
 // TestTranslateErrorsFallbackWithoutRouter ensures no panic when the context
 // has no router/translator.
 func TestTranslateErrorsFallbackWithoutRouter(t *testing.T) {
+	t.Parallel()
 	c := NewContext(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), nil)
 
 	out := c.TranslateErrors(validator.ValidationErrors{})
@@ -121,6 +125,7 @@ func TestTranslateErrorsFallbackWithoutRouter(t *testing.T) {
 
 // TestJSONSetsContentLength verifies buffered JSON responses carry Content-Length.
 func TestJSONSetsContentLength(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.GET("/json", func(c *Context) error {
 		return c.JSON(Map{"hello": "world"})
@@ -144,6 +149,7 @@ func TestJSONSetsContentLength(t *testing.T) {
 // TestSetContentTypePrecedence verifies response helpers honor a previously
 // set content type within the same request.
 func TestSetContentTypePrecedence(t *testing.T) {
+	t.Parallel()
 	r := NewRouter()
 	r.GET("/ct", func(c *Context) error {
 		c.SetContentType("application/problem+json")
@@ -159,6 +165,7 @@ func TestSetContentTypePrecedence(t *testing.T) {
 
 // TestWithTimezone verifies the router timezone applies to form parsing.
 func TestWithTimezone(t *testing.T) {
+	t.Parallel()
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Skip("tzdata unavailable")
@@ -194,6 +201,7 @@ func TestWithTimezone(t *testing.T) {
 // TestNewContextTracksStatus verifies NewContext wraps the writer so
 // StatusCode works outside routing.
 func TestNewContextTracksStatus(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	c := NewContext(w, httptest.NewRequest("GET", "/", nil), nil)
 

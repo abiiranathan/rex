@@ -14,6 +14,7 @@ import (
 // TestAsyncLogHandlerDeliversAllRecords verifies that every record accepted
 // before Close is written by the background worker.
 func TestAsyncLogHandlerDeliversAllRecords(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	syncHandler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	async := NewAsyncLogHandler(syncHandler, 128)
@@ -36,6 +37,7 @@ func TestAsyncLogHandlerDeliversAllRecords(t *testing.T) {
 }
 
 func TestAsyncLogHandlerCloseIsIdempotent(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	async := NewAsyncLogHandler(slog.NewTextHandler(&buf, nil), 16)
 	async.Close()
@@ -52,6 +54,7 @@ func TestAsyncLogHandlerCloseIsIdempotent(t *testing.T) {
 }
 
 func TestAsyncLogHandlerConcurrentUse(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	async := NewAsyncLogHandler(slog.NewJSONHandler(&buf, nil), 1024)
 
@@ -75,6 +78,7 @@ func TestAsyncLogHandlerConcurrentUse(t *testing.T) {
 }
 
 func TestAsyncLogHandlerDropOnFullQueue(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	// A blocking handler keeps the worker busy so the queue fills up.
 	blocking := handlerFunc(func(_ context.Context, r slog.Record) error {
@@ -111,6 +115,7 @@ func (f handlerFunc) WithGroup(string) slog.Handler                   { return f
 
 // TestRouterAsyncLogging verifies the WithAsyncLogging router option end to end.
 func TestRouterAsyncLogging(t *testing.T) {
+	t.Parallel()
 	r := NewRouter(WithAsyncLogging(64))
 	r.GET("/logged", func(c *Context) error { return c.String("ok") })
 

@@ -16,6 +16,7 @@ func LogURL(next rex.HandlerFunc) rex.HandlerFunc {
 }
 
 func TestRouteMethods(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.With(LogURL).GET("/test", func(c *rex.Context) error {

@@ -18,6 +18,7 @@ import (
 )
 
 func TestBrotliMiddleware(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(logger.New(nil))
 
@@ -42,6 +43,7 @@ func TestBrotliMiddleware(t *testing.T) {
 }
 
 func TestBrotliMiddlewareConcurrent(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(logger.New(nil))
 	r.Use(brotli.Brotli(-1))

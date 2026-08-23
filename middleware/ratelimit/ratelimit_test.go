@@ -10,6 +10,7 @@ import (
 )
 
 func TestRateLimit(t *testing.T) {
+	t.Parallel()
 	// 5 requests per second, burst 5
 	config := Config{
 		Rate:       5,
@@ -46,6 +47,7 @@ func TestRateLimit(t *testing.T) {
 }
 
 func TestRateLimitRecovery(t *testing.T) {
+	t.Parallel()
 	// 10 request per second (1 per 100ms)
 	config := Config{
 		Rate:     10,
@@ -85,6 +87,7 @@ func TestRateLimitRecovery(t *testing.T) {
 }
 
 func TestRateLimitCustomKey(t *testing.T) {
+	t.Parallel()
 	config := Config{
 		Rate:     1,
 		Capacity: 1,
@@ -127,6 +130,7 @@ func TestRateLimitCustomKey(t *testing.T) {
 }
 
 func TestManagerCloseStopsCleanup(t *testing.T) {
+	t.Parallel()
 	m := NewManager(10, 10, 50*time.Millisecond)
 	m.Allow("key1")
 
@@ -141,6 +145,7 @@ func TestManagerCloseStopsCleanup(t *testing.T) {
 }
 
 func TestRateLimitWithSharedManager(t *testing.T) {
+	t.Parallel()
 	manager := NewManager(2, 2, time.Minute)
 	defer manager.Close()
 

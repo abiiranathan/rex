@@ -59,6 +59,7 @@ func (j *JSON) FormScan(value any) error {
 }
 
 func TestSetField(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		fieldType reflect.Kind
@@ -124,6 +125,7 @@ func TestSetField(t *testing.T) {
 }
 
 func TestHandleSlice(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		fieldvalue reflect.Value
@@ -161,6 +163,7 @@ func TestHandleSlice(t *testing.T) {
 }
 
 func TestSetFieldCustomInt(t *testing.T) {
+	t.Parallel()
 	fieldValue := reflect.ValueOf(new(customInt)).Elem()
 
 	if err := setField("int", fieldValue, "123"); err != nil {
@@ -175,6 +178,7 @@ func TestSetFieldCustomInt(t *testing.T) {
 
 // test pointers
 func TestSetFieldsPointer(t *testing.T) {
+	t.Parallel()
 	// use pointer to string, int, float, bool, slice, struct, time.Time, and custom type
 	var (
 		str   *string
@@ -233,6 +237,7 @@ func TestSetFieldsPointer(t *testing.T) {
 }
 
 func TestSnakecase(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -264,6 +269,7 @@ func TestSnakecase(t *testing.T) {
 }
 
 func TestKebabCase(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -306,6 +312,7 @@ func TestKebabCase(t *testing.T) {
 
 // test multipart form with []int and []string
 func TestSetFieldMultipartForm(t *testing.T) {
+	t.Parallel()
 	type TestStruct struct {
 		Ints    []int     // use default snake case tag(ints)
 		Strings []string  `form:"strings,omitempty"` // field name must appear first.
@@ -361,6 +368,7 @@ func TestSetFieldMultipartForm(t *testing.T) {
 
 // Test multipart form with ignores empty values
 func TestSetFieldMultipartFormEmpty(t *testing.T) {
+	t.Parallel()
 	type TestStruct struct {
 		Field1 string
 		Field2 int
@@ -408,6 +416,7 @@ func TestSetFieldMultipartFormEmpty(t *testing.T) {
 
 // empty form fields raise an error if required
 func TestSetFieldMultipartFormRequired(t *testing.T) {
+	t.Parallel()
 	type TestStruct struct {
 		Field1 string  `form:"field1,required"`
 		Field2 int     `form:"field2,required"`
@@ -458,6 +467,7 @@ func TestSetFieldMultipartFormRequired(t *testing.T) {
 
 // test application xml
 func TestBodyParserXML(t *testing.T) {
+	t.Parallel()
 	type TestStruct struct {
 		Field1 string `xml:"field1"`
 		Field2 int    `xml:"field2"`
@@ -503,6 +513,7 @@ func TestBodyParserXML(t *testing.T) {
 
 // test QueryParser
 func TestQueryParser(t *testing.T) {
+	t.Parallel()
 	type TestStruct struct {
 		Field1 string `query:"field1"`
 		Field2 int    `query:"field2"`
@@ -541,6 +552,7 @@ func TestQueryParser(t *testing.T) {
 
 // test query parser with slice
 func TestQueryParserSlice(t *testing.T) {
+	t.Parallel()
 	type TestStruct struct {
 		Ints    []int     `query:"ints"`
 		Strings []string  `query:"strings"`
@@ -583,6 +595,7 @@ func TestQueryParserSlice(t *testing.T) {
 }
 
 func TestParseTime(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name        string
 		input       string
@@ -685,6 +698,7 @@ func TestParseTime(t *testing.T) {
 }
 
 func TestParseTimeFormat(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name        string
 		input       string
@@ -734,6 +748,7 @@ func TestParseTimeFormat(t *testing.T) {
 }
 
 func TestValidation(t *testing.T) {
+	t.Parallel()
 	type User struct {
 		Email    string `validate:"required,email"`
 		Username string `validate:"min=10"`
@@ -780,6 +795,7 @@ func TestValidation(t *testing.T) {
 }
 
 func TestCorrectValidation(t *testing.T) {
+	t.Parallel()
 	type User struct {
 		Email    string    `validate:"required,email"`
 		Username string    `validate:"required,min=6"`
@@ -829,6 +845,7 @@ func TestCorrectValidation(t *testing.T) {
 }
 
 func TestErrorHandlerFormErrors(t *testing.T) {
+	t.Parallel()
 	type User struct {
 		Email    string `required:"true"`
 		Username string `required:"true"`

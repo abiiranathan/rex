@@ -10,6 +10,7 @@ import (
 )
 
 func TestCors(t *testing.T) {
+	t.Parallel()
 	router := rex.NewRouter()
 	host := "localhost:8080"
 

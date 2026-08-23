@@ -14,6 +14,7 @@ import (
 // Test the condition where a cookie signed with an old key is rejected after key rotation.
 // Instead of rejecting, we need to expire the cookie on the client side so the login flow can be re-initiated.
 func TestCookieRotation(t *testing.T) {
+	t.Parallel()
 	// 1. Initialize with Key A
 	keyA := securecookie.GenerateRandomKey(32)
 

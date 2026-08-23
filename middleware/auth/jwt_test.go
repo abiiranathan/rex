@@ -13,6 +13,7 @@ import (
 )
 
 func TestCreateJWTToken(t *testing.T) {
+	t.Parallel()
 	payload := "userId"
 	duration := time.Minute * 30
 
@@ -28,6 +29,7 @@ func TestCreateJWTToken(t *testing.T) {
 }
 
 func TestVerifyToken(t *testing.T) {
+	t.Parallel()
 	payload := "userId"
 	duration := time.Minute * 30
 	secret := "supersecret"
@@ -68,6 +70,7 @@ func TestVerifyToken(t *testing.T) {
 }
 
 func TestJWTMiddleware(t *testing.T) {
+	t.Parallel()
 	payload := "userId"
 	duration := time.Minute * 30
 	secret := "supersecret"
@@ -133,6 +136,7 @@ func TestJWTMiddleware(t *testing.T) {
 
 // Test that JWT auth failures flow through the rex error pipeline as *rex.Error.
 func TestJWTErrorPipeline(t *testing.T) {
+	t.Parallel()
 	var captured error
 
 	router := rex.NewRouter()

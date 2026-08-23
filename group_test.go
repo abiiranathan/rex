@@ -13,6 +13,7 @@ import (
 
 // test group GET, POST, PUT, PATCH, DELETE
 func TestRouterGroupMethods(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	admin := r.Group("/admin")
 
@@ -103,6 +104,7 @@ func TestRouterGroupMethods(t *testing.T) {
 }
 
 func TestGroupMiddleware(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	admin := r.Group("/admin")
 
@@ -138,6 +140,7 @@ func TestGroupMiddleware(t *testing.T) {
 
 // Test route groups
 func TestRouterGroup(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	admin := r.Group("/admin")
 
@@ -178,6 +181,7 @@ func TestRouterGroup(t *testing.T) {
 
 // test groups with middleware
 func TestRouterGroupMiddleware(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	admin := r.Group("/admin", func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -211,6 +215,7 @@ func TestRouterGroupMiddleware(t *testing.T) {
 
 // test nested groups
 func TestRouterNestedGroup(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	admin := r.Group("/admin")
 	users := admin.Group("/users")
@@ -235,6 +240,7 @@ func TestRouterNestedGroup(t *testing.T) {
 
 // Test static files for a group
 func TestRouterGroupStatic(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "static")
 	if err != nil {
 		t.Fatalf("could not create temp dir: %v", err)
@@ -279,6 +285,7 @@ func TestRouterGroupStatic(t *testing.T) {
 
 // test group Static with file system
 func TestRouterGroupStaticFS(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "static")
 	if err != nil {
 		t.Fatalf("could not create temp dir: %v", err)

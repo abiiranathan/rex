@@ -13,6 +13,7 @@ import (
 // TestAsyncLoggerDeliversAllRequests verifies that with Async enabled, every
 // request is logged exactly once and Close flushes the queue.
 func TestAsyncLoggerDeliversAllRequests(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	conf := &Config{
 		Output:    &buf,
@@ -46,6 +47,7 @@ func TestAsyncLoggerDeliversAllRequests(t *testing.T) {
 
 // TestSyncModeStillDefault ensures Async defaults to false.
 func TestSyncModeStillDefault(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	conf := &Config{Output: &buf, Format: JSONFormat, Flags: StdLogFlags}
 
@@ -66,6 +68,7 @@ func TestSyncModeStillDefault(t *testing.T) {
 
 // TestLatencyLoggedAsDuration verifies the slog.Duration latency value.
 func TestLatencyLoggedAsDuration(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	conf := &Config{Output: &buf, Format: TextFormat, Flags: LogLatency | LogIP | LogUserAgent}
 

@@ -29,6 +29,7 @@ func newTestAuth(t *testing.T, sessionName string, config auth.CookieConfig) *au
 
 // TestEmptyKeysRejected ensures weak configuration fails fast.
 func TestEmptyKeysRejected(t *testing.T) {
+	t.Parallel()
 	if _, err := auth.NewCookieAuth("s", [][]byte{nil}, User{}, auth.CookieConfig{}); err == nil {
 		t.Fatal("expected error for nil key")
 	}
@@ -42,6 +43,7 @@ func TestEmptyKeysRejected(t *testing.T) {
 
 // TestSameSiteExplicitlyHonored verifies an explicit non-default SameSite is kept.
 func TestSameSiteExplicitlyHonored(t *testing.T) {
+	t.Parallel()
 	a := newTestAuth(t, "samesite_session", auth.CookieConfig{
 		Options: &sessions.Options{
 			Path:     "/",
@@ -72,6 +74,7 @@ func TestSameSiteExplicitlyHonored(t *testing.T) {
 
 // TestDefaultSameSiteIsStrict verifies the secure default.
 func TestDefaultSameSiteIsStrict(t *testing.T) {
+	t.Parallel()
 	a := newTestAuth(t, "strict_session", auth.CookieConfig{})
 
 	router := rex.NewRouter()
@@ -91,6 +94,7 @@ func TestDefaultSameSiteIsStrict(t *testing.T) {
 // TestSessionCookieMaxAgePreserved verifies gorilla semantics where
 // MaxAge=0 means a browser-session cookie that skips sliding refresh.
 func TestSessionCookieMaxAgePreserved(t *testing.T) {
+	t.Parallel()
 	a := newTestAuth(t, "session_cookie", auth.CookieConfig{
 		Options: &sessions.Options{
 			Path:     "/",
@@ -133,6 +137,7 @@ func TestSessionCookieMaxAgePreserved(t *testing.T) {
 // TestDefaultErrorHandlerUsesErrorPipeline verifies 401s flow through rex's
 // centralized error handling as *rex.Error.
 func TestDefaultErrorHandlerUsesErrorPipeline(t *testing.T) {
+	t.Parallel()
 	var captured error
 	a := newTestAuth(t, "pipeline_session", auth.CookieConfig{}) // default handler
 
@@ -168,6 +173,7 @@ func (h *captureHandler) Handle(c *rex.Context, err error) {
 // TestSetStateOverwritesTamperedCookie ensures login succeeds even when the
 // client presents an undecodable session cookie.
 func TestSetStateOverwritesTamperedCookie(t *testing.T) {
+	t.Parallel()
 	a := newTestAuth(t, "tamper_session", auth.CookieConfig{})
 
 	router := rex.NewRouter()
@@ -233,6 +239,7 @@ func TestSetStateOverwritesTamperedCookie(t *testing.T) {
 // TestStateUpdateReusesCachedSession verifies SetState works on an
 // already-authenticated route (exercising the per-request session cache).
 func TestStateUpdateReusesCachedSession(t *testing.T) {
+	t.Parallel()
 	a := newTestAuth(t, "update_session", auth.CookieConfig{})
 
 	router := rex.NewRouter()

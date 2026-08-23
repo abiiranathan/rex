@@ -24,6 +24,7 @@ import (
 )
 
 func TestRouterServeHTTP(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.GET("/test", func(c *rex.Context) error {
@@ -103,6 +104,7 @@ func TestRouterServeHTTP(t *testing.T) {
 
 // test 404
 func TestRouterNotFound(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/path", func(c *rex.Context) error {
 		return c.String("test")
@@ -127,6 +129,7 @@ type User struct {
 
 // test sending and reading form data
 func TestRouterUrlEncodedFormData(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.POST("/urlencoded", func(c *rex.Context) error {
 		u := User{}
@@ -157,6 +160,7 @@ func TestRouterUrlEncodedFormData(t *testing.T) {
 
 // test sending and reading json data
 func TestRouterJSONData(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.POST("/json", func(c *rex.Context) error {
@@ -198,6 +202,7 @@ func TestRouterJSONData(t *testing.T) {
 }
 
 func TestBodyParserDerivedTypes(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.POST("/json", func(c *rex.Context) error {
 		u := User{}
@@ -239,6 +244,7 @@ func TestBodyParserDerivedTypes(t *testing.T) {
 
 // multipart/form-data
 func TestRouterMultipartFormData(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.POST("/multipart", func(c *rex.Context) error {
 		u := User{}
@@ -272,6 +278,7 @@ func TestRouterMultipartFormData(t *testing.T) {
 
 // multipart/form-data with file
 func TestRouterMultipartFormDataWithFile(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.POST("/upload", func(c *rex.Context) error {
 		_ = c.Request.ParseMultipartForm(c.Request.ContentLength)
@@ -341,6 +348,7 @@ const authContextKey contextType = "auth"
 
 // test route middleware
 func TestRouterMiddleware(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(func(hf rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -376,6 +384,7 @@ type XTestKey string
 const xTestCtxKey XTestKey = "X-Test"
 
 func TestWrapMiddleware(t *testing.T) {
+	t.Parallel()
 	httpMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			*r = *r.WithContext(context.WithValue(r.Context(), xTestCtxKey, "test"))
@@ -404,6 +413,7 @@ func TestWrapMiddleware(t *testing.T) {
 }
 
 func TestWrapMiddlewarePropagatesError(t *testing.T) {
+	t.Parallel()
 	httpMiddleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			*r = *r.WithContext(context.WithValue(r.Context(), xTestCtxKey, "test"))
@@ -459,6 +469,7 @@ func (w *customResponseWriter) Write(b []byte) (int, error) {
 
 // Test Wrap middleware with custom http.ResponseWriter
 func TestWrapMiddlewareWithCustomResponseWriter(t *testing.T) {
+	t.Parallel()
 	logger := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cw := &customResponseWriter{ResponseWriter: w}
@@ -493,6 +504,7 @@ const msgKey contextType = "message"
 
 // test chaining of middlewares
 func TestRouterChainMiddleware(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.Use(func(next rex.HandlerFunc) rex.HandlerFunc {
@@ -550,6 +562,7 @@ func TestRouterChainMiddleware(t *testing.T) {
 }
 
 func TestRouteUseChaining(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.GET("/route-use", func(c *rex.Context) error {
@@ -586,6 +599,7 @@ func TestRouteUseChaining(t *testing.T) {
 
 // test render with a base layout
 func TestRouterRenderWithBaseLayout(t *testing.T) {
+	t.Parallel()
 	templ, err := rex.ParseTemplates(
 		"cmd/server/templates",
 		template.FuncMap{"upper": strings.ToUpper},
@@ -662,6 +676,7 @@ func CopyDir(src, dst string) error {
 }
 
 func TestRouterStatic(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "static")
 	if err != nil {
 		t.Fatalf("could not create temp dir: %v", err)
@@ -705,6 +720,7 @@ func TestRouterStatic(t *testing.T) {
 }
 
 func TestRouterStaticFS(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "assests")
 	if err != nil {
 		t.Fatalf("could not create temp dir: %v", err)
@@ -747,6 +763,7 @@ func TestRouterStaticFS(t *testing.T) {
 }
 
 func TestRouterFile(t *testing.T) {
+	t.Parallel()
 	// create a temporary directory for the views
 	dirname, err := os.MkdirTemp("", "static")
 	if err != nil {
@@ -783,6 +800,7 @@ func TestRouterFile(t *testing.T) {
 
 // test rex.Redirect
 func TestRouterRedirect(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.GET("/redirect1", func(c *rex.Context) error {
@@ -842,6 +860,7 @@ func TestRouterRedirect(t *testing.T) {
 
 // test redirect route
 func TestRouterRedirectRoute(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/redirect_route1", func(c *rex.Context) error {
 		return c.RedirectRoute("/redirect_route2", rex.RedirectOptions{Status: http.StatusFound})
@@ -867,6 +886,7 @@ func TestRouterRedirectRoute(t *testing.T) {
 
 // test Query
 func TestRouterQuery(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/query", func(c *rex.Context) error {
 		return c.String(c.Query("name", "default"))
@@ -887,6 +907,7 @@ func TestRouterQuery(t *testing.T) {
 
 // test QueryInt
 func TestRouterQueryInt(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/queryint", func(c *rex.Context) error {
 		return c.String(strconv.Itoa(c.QueryInt("age", 0)))
@@ -907,6 +928,7 @@ func TestRouterQueryInt(t *testing.T) {
 
 // test ParamInt
 func TestRouterParamInt(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/paramint/{age}", func(c *rex.Context) error {
 		return c.String(c.Param("age"))
@@ -962,6 +984,7 @@ func BenchmarkRouterFullCycle(b *testing.B) {
 }
 
 func TestRouterExecuteTemplate(t *testing.T) {
+	t.Parallel()
 	templ, err := rex.ParseTemplates("cmd/server/templates",
 		template.FuncMap{"upper": strings.ToUpper}, ".html")
 
@@ -1024,6 +1047,7 @@ func TestRouterExecuteTemplate(t *testing.T) {
 }
 
 func TestRouterFileFS(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "assets")
 	if err != nil {
 		t.Fatal(err)
@@ -1058,6 +1082,7 @@ func TestRouterFileFS(t *testing.T) {
 }
 
 func TestRouterFaviconFS(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "assets")
 	if err != nil {
 		t.Fatal(err)
@@ -1093,6 +1118,7 @@ func TestRouterFaviconFS(t *testing.T) {
 
 // Test serve minified files if available
 func TestRouterServeMinifiedAssets(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "assets")
 	if err != nil {
 		t.Fatal(err)
@@ -1138,6 +1164,7 @@ func TestRouterServeMinifiedAssets(t *testing.T) {
 }
 
 func TestRouterServeMinifiedAssetsStatic(t *testing.T) {
+	t.Parallel()
 	dirname, err := os.MkdirTemp("", "assets")
 	if err != nil {
 		t.Fatal(err)
@@ -1184,6 +1211,7 @@ func TestRouterServeMinifiedAssetsStatic(t *testing.T) {
 }
 
 func TestRegisteredRoutes(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 
 	r.GET("/test", func(c *rex.Context) error {
@@ -1216,6 +1244,7 @@ func TestRegisteredRoutes(t *testing.T) {
 }
 
 func TestSPAHandler(t *testing.T) {
+	t.Parallel()
 	temp := t.TempDir()
 
 	// Create a simple SPA with 4 files.
@@ -1326,6 +1355,7 @@ func TestSPAHandler(t *testing.T) {
 var templates embed.FS
 
 func TestCreateFileSystem(t *testing.T) {
+	t.Parallel()
 	fs := rex.CreateFileSystem(templates, "cmd/server/templates")
 	if fs == nil {
 		t.Fatal("expected a file system")
@@ -1384,6 +1414,7 @@ func BenchmarkRequestsPerSecond(b *testing.B) {
 
 // Benchmark and calculate requests per second
 func TestRequestsPerSecond(t *testing.T) {
+	t.Parallel()
 	result := testing.Benchmark(BenchmarkRequestsPerSecond)
 
 	// Calculate requests per second

@@ -9,6 +9,7 @@ import (
 )
 
 func TestSecurityDefault(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(New())
 
@@ -40,6 +41,7 @@ func TestSecurityDefault(t *testing.T) {
 }
 
 func TestSecurityConfig(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	config := Config{
 		XSSProtection:         "0",

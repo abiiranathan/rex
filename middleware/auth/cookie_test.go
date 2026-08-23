@@ -30,6 +30,7 @@ func skipAuth(c *rex.Context) bool {
 }
 
 func TestCookieMiddleware(t *testing.T) {
+	t.Parallel()
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
 	cookieAuth, err := auth.NewCookieAuth("rex_session_name", [][]byte{secretKey, encryptionKey}, User{}, auth.CookieConfig{
@@ -151,12 +152,14 @@ func TestCookieMiddleware(t *testing.T) {
 }
 
 func TestCookieSlidingWindowRefresh(t *testing.T) {
+	// Not parallel: asserts against wall-clock refresh thresholds.
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
 
 	// Use a short MaxAge so we can reason about the threshold easily.
-	// refreshThreshold = maxAge / 2 = 4s
-	maxAge := 8
+	// refreshThreshold = maxAge / 2 = 2s. Sleeps are 3s: safely above the
+	// refresh threshold yet well below the 4s expiry.
+	maxAge := 4
 	cookieAuth, err := auth.NewCookieAuth("rex_session_name", [][]byte{secretKey, encryptionKey}, User{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   maxAge,
@@ -226,8 +229,9 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 	}
 
 	// --- Invariant 2: Cookie IS refreshed once the threshold has elapsed ---
-	// Sleep past the refresh threshold (maxAge/2 seconds).
-	time.Sleep(time.Duration(maxAge/2+1) * time.Second)
+	// Sleep past the refresh threshold (maxAge/2 = 2s) but well short of
+	// the 4s expiry.
+	time.Sleep(time.Duration(maxAge*3/4) * time.Second)
 
 	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
 	if w.Code != http.StatusOK {
@@ -274,6 +278,7 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 }
 
 func TestCookieAuthInstanceAPI(t *testing.T) {
+	t.Parallel()
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
 
@@ -340,6 +345,7 @@ func TestCookieAuthInstanceAPI(t *testing.T) {
 }
 
 func TestCookieAuthMultipleInstances(t *testing.T) {
+	t.Parallel()
 	keyA := securecookie.GenerateRandomKey(32)
 	keyB := securecookie.GenerateRandomKey(32)
 

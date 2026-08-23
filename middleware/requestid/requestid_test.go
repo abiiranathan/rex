@@ -9,6 +9,7 @@ import (
 )
 
 func TestRequestID(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(New())
 
@@ -35,6 +36,7 @@ func TestRequestID(t *testing.T) {
 }
 
 func TestRequestIDConfig(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(WithConfig(Config{
 		Header: "X-Trace-ID",
@@ -58,6 +60,7 @@ func TestRequestIDConfig(t *testing.T) {
 }
 
 func TestRequestIDExisting(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.Use(New())
 

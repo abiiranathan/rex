@@ -12,6 +12,7 @@ import (
 )
 
 func TestGzip_WithAcceptEncoding(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(Gzip())
 
@@ -55,6 +56,7 @@ func TestGzip_WithAcceptEncoding(t *testing.T) {
 }
 
 func TestGzip_WithoutAcceptEncoding(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(Gzip())
 
@@ -82,6 +84,7 @@ func TestGzip_WithoutAcceptEncoding(t *testing.T) {
 }
 
 func TestGzip_WithoutGzipInAcceptEncoding(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(Gzip())
 
@@ -109,6 +112,7 @@ func TestGzip_WithoutGzipInAcceptEncoding(t *testing.T) {
 }
 
 func TestGzip_SkipPaths(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(Gzip("/api/raw", "/static"))
 
@@ -148,6 +152,7 @@ func TestGzip_SkipPaths(t *testing.T) {
 }
 
 func TestGzipLevel_BestSpeed(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(GzipLevel(gzip.BestSpeed))
 
@@ -190,6 +195,7 @@ func TestGzipLevel_BestSpeed(t *testing.T) {
 }
 
 func TestGzipLevel_BestCompression(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(GzipLevel(gzip.BestCompression))
 
@@ -214,6 +220,7 @@ func TestGzipLevel_BestCompression(t *testing.T) {
 }
 
 func TestGzip_JSONResponse(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(Gzip())
 
@@ -259,6 +266,7 @@ func TestGzip_JSONResponse(t *testing.T) {
 }
 
 func TestGzip_LargeResponse(t *testing.T) {
+	t.Parallel()
 	app := rex.NewRouter()
 	app.Use(Gzip())
 

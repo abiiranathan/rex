@@ -29,6 +29,7 @@ func (h *TestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestNewServer(t *testing.T) {
+	t.Parallel()
 	handler := &TestHandler{}
 	server, err := NewServer(":0", handler)
 	if err != nil {
@@ -66,6 +67,7 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestServerOptions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		option   ServerOption
@@ -269,6 +271,7 @@ func WriteCertFiles(certPEM, keyPEM []byte, certPath, keyPath string) error {
 }
 
 func TestGenerateCert(t *testing.T) {
+	t.Parallel()
 	config := DefaultCertConfig()
 	certPEM, keyPEM, err := GenerateCert(config)
 
@@ -302,6 +305,7 @@ func TestGenerateCert(t *testing.T) {
 }
 
 func TestWriteCertFiles(t *testing.T) {
+	t.Parallel()
 	// Create temporary directory
 	tmpDir, err := os.MkdirTemp("", "cert-test-*")
 	if err != nil {

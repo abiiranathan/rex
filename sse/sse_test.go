@@ -14,6 +14,7 @@ import (
 )
 
 func TestStream_BasicMessages(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 3)
@@ -51,6 +52,7 @@ func TestStream_BasicMessages(t *testing.T) {
 }
 
 func TestStream_WithOptions(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)
@@ -88,6 +90,7 @@ func TestStream_WithOptions(t *testing.T) {
 }
 
 func TestStream_EventStructure(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)
@@ -125,6 +128,7 @@ func TestStream_EventStructure(t *testing.T) {
 }
 
 func TestStream_MultilineData(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)
@@ -147,6 +151,7 @@ func TestStream_MultilineData(t *testing.T) {
 }
 
 func TestStream_ContextCancel(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any)
@@ -177,6 +182,7 @@ func TestStream_ContextCancel(t *testing.T) {
 }
 
 func TestStream_ChannelClose(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	streamEnded := make(chan bool)
 
@@ -205,6 +211,7 @@ func TestStream_ChannelClose(t *testing.T) {
 }
 
 func TestStream_ErrorCallback(t *testing.T) {
+	t.Parallel()
 	var errorCalled bool
 	var mu sync.Mutex
 
@@ -239,6 +246,7 @@ func TestStream_ErrorCallback(t *testing.T) {
 }
 
 func TestStream_OnCloseCallback(t *testing.T) {
+	t.Parallel()
 	var closeCalled bool
 	var mu sync.Mutex
 
@@ -271,6 +279,7 @@ func TestStream_OnCloseCallback(t *testing.T) {
 }
 
 func TestStreamWithContext(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	ch := make(chan any, 2)
 	ch <- "message 1"
@@ -297,6 +306,7 @@ func TestStreamWithContext(t *testing.T) {
 }
 
 func TestStreamWithContext_Cancel(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	ch := make(chan any) // Don't close, will cancel context
 
@@ -322,6 +332,7 @@ func TestStreamWithContext_Cancel(t *testing.T) {
 }
 
 func TestNewEvent_FluentAPI(t *testing.T) {
+	t.Parallel()
 	event := NewEvent("test data").
 		WithID("evt-123").
 		WithEvent("notification").
@@ -346,6 +357,7 @@ func TestNewEvent_FluentAPI(t *testing.T) {
 }
 
 func TestSanitizeField(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected string
@@ -365,6 +377,7 @@ func TestSanitizeField(t *testing.T) {
 }
 
 func TestDefaultOptions(t *testing.T) {
+	t.Parallel()
 	opts := DefaultOptions()
 
 	if opts.Keepalive != true {
@@ -379,6 +392,7 @@ func TestDefaultOptions(t *testing.T) {
 }
 
 func TestStream_ByteSliceData(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)
@@ -398,6 +412,7 @@ func TestStream_ByteSliceData(t *testing.T) {
 }
 
 func TestStream_NilData(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)
@@ -420,6 +435,7 @@ func TestStream_NilData(t *testing.T) {
 }
 
 func TestStream_ComplexJSON(t *testing.T) {
+	t.Parallel()
 	type ComplexData struct {
 		Name   string            `json:"name"`
 		Values []int             `json:"values"`
@@ -468,6 +484,7 @@ func TestStream_ComplexJSON(t *testing.T) {
 }
 
 func TestStream_PointerEvent(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)
@@ -487,6 +504,7 @@ func TestStream_PointerEvent(t *testing.T) {
 }
 
 func TestStream_Headers(t *testing.T) {
+	t.Parallel()
 	r := rex.NewRouter()
 	r.GET("/stream", func(c *rex.Context) error {
 		ch := make(chan any, 1)

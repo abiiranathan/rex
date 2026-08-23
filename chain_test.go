@@ -22,6 +22,7 @@ type ChainUser struct {
 }
 
 func TestChainedMiddleware(t *testing.T) {
+	t.Parallel()
 	// Initialize Auth Store
 	secretKey := securecookie.GenerateRandomKey(32)
 	cookieAuth, err := auth.NewCookieAuth("rex_chain_session", [][]byte{secretKey}, ChainUser{}, auth.CookieConfig{
