@@ -1,4 +1,8 @@
 // Package test provides HTTP testing helpers for rex routers.
+//
+// The recommended entry point is [NewClient]: a fluent, supertest-style
+// client that dispatches requests in memory and reports assertion failures
+// through testing.TB automatically.
 package test
 
 import (

@@ -59,7 +59,7 @@ Handlers are just `func(c *rex.Context) error` — return an error and rex's cen
 | App state | Global vars or context keys | `WithState` injection with type-safe `GetState[T]` |
 | Static files / SPA | `http.FileServer` wiring | `Static`, `StaticFS`, minified-variant serving, single-method SPA hosting with fallback |
 | Graceful shutdown | Hand-rolled signal handling | `NewServer` with timeouts, HTTP/2 config, TLS helpers |
-| Testing | `httptest` boilerplate | `test.Test(router, req)` helpers |
+| Testing | `httptest` boilerplate | Fluent in-memory client with self-failing assertions |
 | Observability | Bring your own | slog logging (sync or async queue), request IDs, recovery, ETag, rate limiting |
 
 And what you keep:
@@ -133,6 +133,33 @@ State is shared across all requests — make it safe for concurrent use, exactly
 | `middleware/auth` | cookie sessions (key rotation, sliding refresh), Basic Auth, JWT |
 | `middleware/flash` | flash messages via cookies |
 | `sse` | server-sent events streaming with keepalives |
+
+---
+
+## Handler testing without a server
+
+The [`test`](./test) package ships a supertest-style client that runs requests against your router in memory:
+
+```go
+import "github.com/abiiranathan/rex/test"
+
+func TestGetUser(t *testing.T) {
+    c := test.NewClient(t, router)
+
+    var user User
+    c.Get("/users/42").Send().
+        AssertStatus(200).
+        AssertJSON(&user).
+        AssertHeader("Content-Type", "application/json")
+
+    // Shortcuts for common cases:
+    c.PostJSON("/users", User{Name: "ada"}).AssertStatus(201)
+    c.Post("/upload").File("file", "a.txt", data).FormField("note", "x").Send()
+    c.Get("/search").Query("q", "golang").Cookie(sessionCookie).Send()
+}
+```
+
+Failed assertions report through `testing.TB` automatically, with truncated response bodies in the failure message.
 
 ---
 
