@@ -1111,15 +1111,14 @@ func TestRouterServeMinifiedAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rex.ServeMinified = true
-	rex.MinExtensions = append(rex.MinExtensions, ".txt")
-
-	r := rex.NewRouter()
+	r := rex.NewRouter(
+		rex.WithServeMinified(true),
+		rex.WithMinExtensions([]string{".js", ".css", ".txt"}),
+	)
 
 	r.StaticFS("/static", http.Dir(dirname))
 
 	w := httptest.NewRecorder()
-
 	// we should get the minified file
 	req := httptest.NewRequest("GET", "/static/test.txt", nil)
 	r.ServeHTTP(w, req)
@@ -1157,10 +1156,10 @@ func TestRouterServeMinifiedAssetsStatic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rex.ServeMinified = true
-	rex.MinExtensions = append(rex.MinExtensions, ".txt")
-
-	r := rex.NewRouter()
+	r := rex.NewRouter(
+		rex.WithServeMinified(true),
+		rex.WithMinExtensions([]string{".js", ".css", ".txt"}),
+	)
 
 	r.Static("/static", dirname, 60)
 
