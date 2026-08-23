@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/abiiranathan/rex"
@@ -307,28 +308,32 @@ func TestStreamWithContext(t *testing.T) {
 
 func TestStreamWithContext_Cancel(t *testing.T) {
 	t.Parallel()
-	w := httptest.NewRecorder()
-	ch := make(chan any) // Don't close, will cancel context
 
-	ctx, cancel := context.WithCancel(context.Background())
+	synctest.Test(t, func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ch := make(chan any) // Don't close, will cancel context
 
-	done := make(chan error)
-	go func() {
-		done <- StreamWithContext(ctx, w, ch, nil)
-	}()
+		ctx, cancel := context.WithCancel(context.Background())
 
-	// Cancel after short delay
-	time.Sleep(50 * time.Millisecond)
-	cancel()
+		done := make(chan error)
+		go func() {
+			done <- StreamWithContext(ctx, w, ch, nil)
+		}()
 
-	select {
-	case err := <-done:
-		if err != context.Canceled {
-			t.Errorf("Expected context.Canceled error, got: %v", err)
+		// Cancel after a short virtual delay; the bubble's fake clock makes
+		// this instant and deterministic.
+		synctest.Sleep(50 * time.Millisecond)
+		cancel()
+
+		select {
+		case err := <-done:
+			if err != context.Canceled {
+				t.Errorf("Expected context.Canceled error, got: %v", err)
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatal("StreamWithContext did not exit on context cancel")
 		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("StreamWithContext did not exit on context cancel")
-	}
+	})
 }
 
 func TestNewEvent_FluentAPI(t *testing.T) {

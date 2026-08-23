@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/abiiranathan/rex"
@@ -48,42 +49,49 @@ func TestRateLimit(t *testing.T) {
 
 func TestRateLimitRecovery(t *testing.T) {
 	t.Parallel()
-	// 10 request per second (1 per 100ms)
-	config := Config{
-		Rate:     10,
-		Capacity: 1,
-	}
 
-	r := rex.NewRouter()
-	r.Use(New(config))
+	synctest.Test(t, func(t *testing.T) {
+		// 10 request per second (1 per 100ms)
+		manager := NewManager(10, 1, time.Minute)
+		defer manager.Close() // bubbles require all goroutines to exit
 
-	r.GET("/", func(c *rex.Context) error {
-		return c.String("ok")
+		config := Config{
+			Rate:     10,
+			Capacity: 1,
+			Manager:  manager,
+		}
+
+		r := rex.NewRouter()
+		r.Use(New(config))
+
+		r.GET("/", func(c *rex.Context) error {
+			return c.String("ok")
+		})
+
+		// Consume capacity
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatal("First request failed")
+		}
+
+		// Immediate next request should fail (capacity 1 exhausted)
+		w = httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusTooManyRequests {
+			t.Fatal("Expected limit reached")
+		}
+
+		// Advance virtual time past the refill interval (100ms).
+		synctest.Sleep(150 * time.Millisecond)
+
+		w = httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected recovery, got %d", w.Code)
+		}
 	})
-
-	// Consume capacity
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatal("First request failed")
-	}
-
-	// Immediate next request should fail (capacity 1 exhausted)
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatal("Expected limit reached")
-	}
-
-	// Wait for refill (100ms + buffer)
-	time.Sleep(150 * time.Millisecond)
-
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected recovery, got %d", w.Code)
-	}
 }
 
 func TestRateLimitCustomKey(t *testing.T) {

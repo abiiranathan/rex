@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
+	"testing/synctest"
 )
 
 // TestAsyncLogHandlerDeliversAllRecords verifies that every record accepted
@@ -116,25 +116,26 @@ func (f handlerFunc) WithGroup(string) slog.Handler                   { return f
 // TestRouterAsyncLogging verifies the WithAsyncLogging router option end to end.
 func TestRouterAsyncLogging(t *testing.T) {
 	t.Parallel()
-	r := NewRouter(WithAsyncLogging(64))
-	r.GET("/logged", func(c *Context) error { return c.String("ok") })
 
-	req := httptest.NewRequest("GET", "/logged", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	synctest.Test(t, func(t *testing.T) {
+		r := NewRouter(WithAsyncLogging(64))
+		r.GET("/logged", func(c *Context) error { return c.String("ok") })
 
-	// Wait for the background worker to drain the queue; Close blocks until done.
-	deadline := time.Now().Add(time.Second)
-	for r.logQueue.Queued() > 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	r.CloseLogQueue()
+		req := httptest.NewRequest("GET", "/logged", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
 
-	if dropped := r.LogQueueDropped(); dropped != 0 {
-		t.Fatalf("expected 0 dropped, got %d", dropped)
-	}
+		// Wait until every goroutine in the bubble is durably blocked; the
+		// background worker only blocks once the queue is fully drained.
+		synctest.Wait()
+		r.CloseLogQueue()
 
-	// Safe to call again / without async enabled.
-	r.CloseLogQueue()
-	NewRouter().CloseLogQueue()
+		if dropped := r.LogQueueDropped(); dropped != 0 {
+			t.Fatalf("expected 0 dropped, got %d", dropped)
+		}
+
+		// Safe to call again / without async enabled.
+		r.CloseLogQueue()
+		NewRouter().CloseLogQueue()
+	})
 }

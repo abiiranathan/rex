@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/abiiranathan/rex"
@@ -152,14 +153,21 @@ func TestCookieMiddleware(t *testing.T) {
 }
 
 func TestCookieSlidingWindowRefresh(t *testing.T) {
-	// Not parallel: asserts against wall-clock refresh thresholds.
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		runSlidingWindowTest(t)
+	})
+}
+
+// runSlidingWindowTest exercises the sliding-refresh invariants using the
+// synctest bubble's virtual clock, so it is instant and deterministic.
+func runSlidingWindowTest(t *testing.T) {
 	secretKey := securecookie.GenerateRandomKey(32)
 	encryptionKey := securecookie.GenerateRandomKey(32)
 
-	// Use a short MaxAge so we can reason about the threshold easily.
-	// refreshThreshold = maxAge / 2 = 2s. Sleeps are 3s: safely above the
-	// refresh threshold yet well below the 4s expiry.
-	maxAge := 4
+	// Thresholds are exact under virtual time; no buffer margins needed.
+	maxAge := 8
 	cookieAuth, err := auth.NewCookieAuth("rex_session_name", [][]byte{secretKey, encryptionKey}, User{}, auth.CookieConfig{
 		Options: &sessions.Options{
 			MaxAge:   maxAge,
@@ -229,9 +237,8 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 	}
 
 	// --- Invariant 2: Cookie IS refreshed once the threshold has elapsed ---
-	// Sleep past the refresh threshold (maxAge/2 = 2s) but well short of
-	// the 4s expiry.
-	time.Sleep(time.Duration(maxAge*3/4) * time.Second)
+	// Advance past the refresh threshold (maxAge/2 = 4s).
+	synctest.Sleep(time.Duration(maxAge/2+1) * time.Second)
 
 	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
 	if w.Code != http.StatusOK {
@@ -262,8 +269,8 @@ func TestCookieSlidingWindowRefresh(t *testing.T) {
 	}
 
 	// --- Invariant 5: Session expires if never refreshed ---
-	// Sleep until the original MaxAge is fully exhausted.
-	time.Sleep(time.Duration(maxAge/2+1) * time.Second)
+	// Advance until the original MaxAge is fully exhausted.
+	synctest.Sleep(time.Duration(maxAge/2+1) * time.Second)
 
 	w = doRequest(http.MethodGet, "/protected", []string{firstCookie})
 	if w.Code != http.StatusUnauthorized {
