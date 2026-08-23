@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"sync"
 
 	"github.com/abiiranathan/rex"
 )
@@ -55,6 +56,20 @@ type Config struct {
 	// Callback is a function that can be used to modify the arguments passed to the logger.
 	// Forexample the request_id, user_id etc. It MUST return an even number of arguments.
 	Callback func(c *rex.Context, args ...any) []any
+
+	// Async delivers log records through a bounded background queue so log
+	// writes never block request handling. When the queue is full, records
+	// are dropped (see Dropped). Call Close during graceful shutdown to
+	// flush queued records. Default: false (synchronous logging).
+	Async bool
+
+	// QueueSize is the number of records buffered when Async is enabled.
+	// Default: rex.DefaultLogQueueSize.
+	QueueSize int
+
+	loggerOnce   sync.Once
+	logger       *slog.Logger
+	asyncHandler *rex.AsyncLogHandler
 }
 
 // DefaultConfig is the default logger used by the Logger middleware.
@@ -96,6 +111,46 @@ func New(config *Config) rex.Middleware {
 	return config.Logger
 }
 
+// builtin returns the middleware's slog.Logger, constructing it exactly once.
+// The handler is built here (not per request) so the encoding machinery is
+// reused across requests.
+func (l *Config) builtin() *slog.Logger {
+	l.loggerOnce.Do(func() {
+		var handler slog.Handler
+		switch l.Format {
+		case JSONFormat:
+			handler = slog.NewJSONHandler(l.Output, l.Options)
+		default:
+			handler = slog.NewTextHandler(l.Output, l.Options)
+		}
+
+		if l.Async {
+			l.asyncHandler = rex.NewAsyncLogHandler(handler, l.QueueSize)
+			handler = l.asyncHandler
+		}
+		l.logger = slog.New(handler)
+	})
+	return l.logger
+}
+
+// Close flushes and stops the background log queue when Async is enabled.
+// Call it during graceful shutdown so buffered records are not lost. It is
+// safe to call when async logging was never enabled or multiple times.
+func (l *Config) Close() {
+	if l.asyncHandler != nil {
+		l.asyncHandler.Close()
+	}
+}
+
+// Dropped returns the number of log records dropped because the async queue
+// was full. Returns 0 when Async is not enabled.
+func (l *Config) Dropped() uint64 {
+	if l.asyncHandler == nil {
+		return 0
+	}
+	return l.asyncHandler.Dropped()
+}
+
 // Logger is the middleware handler function for LoggerMiddleware.
 func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 	return func(c *rex.Context) error {
@@ -109,19 +164,9 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 
 		err := next(c)
 
-		var logger *slog.Logger
-		switch l.Format {
-		case TextFormat:
-			logger = slog.New(slog.NewTextHandler(l.Output, l.Options))
-		case JSONFormat:
-			logger = slog.New(slog.NewJSONHandler(l.Output, l.Options))
-		default:
-			logger = slog.New(slog.NewTextHandler(l.Output, l.Options))
-		}
-
 		args := []any{"status", c.StatusCode()}
 		if l.Flags&LogLatency != 0 {
-			args = append(args, "latency", c.Latency().String())
+			args = append(args, "latency", slog.DurationValue(c.Latency()))
 		}
 		args = append(args, "method", c.Request.Method, "path", c.Request.URL.Path)
 
@@ -142,7 +187,7 @@ func (l *Config) Logger(next rex.HandlerFunc) rex.HandlerFunc {
 			}
 		}
 
-		logger.Info("", args...)
+		l.builtin().Info("", args...)
 		return err
 	}
 }

@@ -26,6 +26,12 @@ type Config struct {
 	// ErrorHandler is called when the limit is exceeded.
 	// Default: returns 429 Too Many Requests.
 	ErrorHandler func(c *rex.Context) error
+
+	// Manager optionally supplies an externally managed token bucket manager,
+	// allowing sharing limiters across middleware instances and calling
+	// Manager.Close to stop its background cleanup goroutine.
+	// If nil, a new manager is created internally for this middleware.
+	Manager *Manager
 }
 
 // New creates a new RateLimit middleware with the given configuration.
@@ -52,7 +58,10 @@ func New(config Config) rex.Middleware {
 		}
 	}
 
-	manager := NewManager(config.Rate, config.Capacity, config.Expiration)
+	manager := config.Manager
+	if manager == nil {
+		manager = NewManager(config.Rate, config.Capacity, config.Expiration)
+	}
 
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {

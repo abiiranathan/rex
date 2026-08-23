@@ -110,7 +110,7 @@ func (c *Context) BodyParser(v any, loc ...*time.Location) error {
 	}
 
 	contentType := c.ContentType()
-	timezone := DefaultTimezone
+	timezone := c.defaultTimezone()
 	if len(loc) > 0 && loc[0] != nil {
 		timezone = loc[0]
 	}
@@ -135,7 +135,11 @@ func (c *Context) BodyParser(v any, loc ...*time.Location) error {
 		var form *multipart.Form
 		var err error
 		if contentType == ContentTypeMultipartForm {
-			err = r.ParseMultipartForm(r.ContentLength)
+			maxMemory := DefaultMaxMemory
+			if c.router != nil && c.router.maxMemory > 0 {
+				maxMemory = c.router.maxMemory
+			}
+			err = r.ParseMultipartForm(maxMemory)
 			if err != nil {
 				return FormError{
 					Err:  err,
@@ -624,7 +628,7 @@ func (c *Context) QueryParser(v any, tag ...string) error {
 		}
 	}
 
-	data := c.Request.URL.Query()
+	data := c.queryValues()
 	dataMap := make(map[string]any, len(data))
 	for k, v := range data {
 		if len(v) == 1 {
@@ -634,7 +638,7 @@ func (c *Context) QueryParser(v any, tag ...string) error {
 		}
 	}
 
-	err := c.parseFormData(dataMap, v, time.UTC, tagName)
+	err := c.parseFormData(dataMap, v, c.defaultTimezone(), tagName)
 	if err != nil {
 		return errors.Wrap(err, "query parser error")
 	}

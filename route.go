@@ -17,9 +17,9 @@ type route struct {
 }
 
 // With creates a route builder with the provided middleware.
-func (r *Router) With(midleware ...Middleware) *route {
+func (r *Router) With(middlewares ...Middleware) *route {
 	return &route{
-		middlewares: midleware,
+		middlewares: middlewares,
 		router:      r,  // router reference
 		prefix:      "", // when returned by Group, this is not an empty string
 	}

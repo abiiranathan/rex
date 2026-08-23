@@ -15,7 +15,6 @@ import (
 	"github.com/abiiranathan/rex/middleware/etag"
 	"github.com/abiiranathan/rex/middleware/logger"
 	"github.com/abiiranathan/rex/middleware/recovery"
-	"github.com/gorilla/sessions"
 )
 
 //go:embed static/*
@@ -28,33 +27,21 @@ func main() {
 	}
 
 	// Create a new router
-	rex.NoTrailingSlash = true
-	rex.ServeMinified = true
-
 	mux := rex.NewRouter(
 		rex.WithTemplates(t),
 		rex.PassContextToViews(true),
 		rex.ContentBlock("Content"),
+		rex.WithNoTrailingSlash(true),
+		rex.WithServeMinified(true),
 	)
 
 	mux.Use(recovery.New(recovery.WithStackTrace(true)))
 	mux.Use(logger.New(logger.DefaultConfig))
 	mux.Use(etag.New())
 	mux.Use(cors.New())
-	mux.Use(brotli.Brotli(-1))
+	mux.Use(brotli.Brotli(6))
 
-	// Create a cookie store.
-	var store = sessions.NewCookieStore([]byte("secret key"))
-	store.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   0,
-		Domain:   "localhost",
-		Secure:   false,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	}
-
-	mux.Use(csrf.New(store, false))
+	mux.Use(csrf.New(false))
 	mux.StaticFS("/static", http.FS(static))
 
 	mux.GET("/test/{id}/", func(c *rex.Context) error {

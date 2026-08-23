@@ -57,23 +57,38 @@ type Manager struct {
 	rate       float64
 	capacity   float64
 	expiration time.Duration // remove bucket if unused for this duration
+
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // NewManager creates a new rate limiter manager.
 // rate: tokens per second.
 // capacity: max burst.
 // expiration: how long to keep an idle bucket in memory.
+//
+// The manager starts a background cleanup goroutine. Call Close when the
+// manager is no longer needed to stop it and release its resources.
 func NewManager(rate, capacity float64, expiration time.Duration) *Manager {
 	m := &Manager{
 		buckets:    make(map[string]*tokenBucket),
 		rate:       rate,
 		capacity:   capacity,
 		expiration: expiration,
+		done:       make(chan struct{}),
 	}
 
 	// Start cleanup loop
 	go m.cleanupLoop()
 	return m
+}
+
+// Close stops the background cleanup goroutine. It is safe to call
+// multiple times.
+func (m *Manager) Close() {
+	m.closeOnce.Do(func() {
+		close(m.done)
+	})
 }
 
 // Allow checks if the key is allowed.
@@ -98,8 +113,14 @@ func (m *Manager) Allow(key string) bool {
 
 func (m *Manager) cleanupLoop() {
 	ticker := time.NewTicker(m.expiration)
-	for range ticker.C {
-		m.cleanup()
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			m.cleanup()
+		case <-m.done:
+			return
+		}
 	}
 }
 

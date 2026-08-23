@@ -30,6 +30,7 @@ node_modules
 go.work
 
 cmd/example/example
+cmd/example/tmp/
 cmd/server/server
 .vscode/
 *.prof

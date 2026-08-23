@@ -1,16 +1,16 @@
 // Package csrf provides CSRF protection middleware for rex routers.
+//
+// Tokens are stored in an HTTP-only cookie and must be echoed back by the
+// client either as a form field ("csrf_token") or in the X-CSRF-Token header.
 package csrf
 
 import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/abiiranathan/rex"
-	"github.com/gorilla/sessions"
 )
 
 const (
@@ -19,9 +19,8 @@ const (
 )
 
 var (
-	ErrMissingToken = errors.New("missing CSRF token")
-	ErrInvalidToken = errors.New("invalid CSRF token")
-	httpsCookie     = true
+	ErrMissingToken = rex.NewError(http.StatusForbidden, "missing CSRF token")
+	ErrInvalidToken = rex.NewError(http.StatusForbidden, "invalid CSRF token")
 )
 
 // CreateToken generates a random CSRF token.
@@ -34,18 +33,24 @@ func CreateToken() (string, error) {
 // New returns middleware that sets and verifies CSRF tokens using cookies and forms.
 // Set the token in forms using {{ .csrf_token }} in templates.
 // If secureCookie is true, the token cookie is transmitted only over HTTPS.
-func New(store sessions.Store, secureCookie bool) rex.Middleware {
-	httpsCookie = secureCookie
-
+//
+// Validation failures are returned as *rex.Error values (HTTP 403), so they
+// flow through the router's centralized error handling pipeline and can be
+// customized via rex.Router.SetErrorHandler.
+func New(secureCookie bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(ctx *rex.Context) error {
 			req := ctx.Request
 			resp := ctx.Response
 
 			// Get or generate CSRF token.
-			token, err := getOrCreateToken(req, resp)
+			token, err := getOrCreateToken(req, resp, secureCookie)
 			if err != nil {
-				return fmt.Errorf("unable to create CSRF token: %v", err)
+				return rex.NewErrorWrap(
+					http.StatusInternalServerError,
+					"unable to create CSRF token",
+					err,
+				)
 			}
 
 			// Skip CSRF validation for safe methods (GET, HEAD, OPTIONS).
@@ -56,8 +61,7 @@ func New(store sessions.Store, secureCookie bool) rex.Middleware {
 
 			// Validate CSRF token for non-safe methods.
 			if !validateCSRFToken(req) {
-				http.Error(resp, "Forbidden: CSRF token validation failed", http.StatusForbidden)
-				return nil
+				return ErrInvalidToken
 			}
 
 			// Set the CSRF token in the context.
@@ -68,7 +72,7 @@ func New(store sessions.Store, secureCookie bool) rex.Middleware {
 }
 
 // getOrCreateToken retrieves the token from the cookie or creates a new one.
-func getOrCreateToken(req *http.Request, resp http.ResponseWriter) (string, error) {
+func getOrCreateToken(req *http.Request, resp http.ResponseWriter, secureCookie bool) (string, error) {
 	// Check if the CSRF token is already in the cookie.
 	cookie, err := req.Cookie(cookieName)
 	if err == nil {
@@ -85,9 +89,9 @@ func getOrCreateToken(req *http.Request, resp http.ResponseWriter) (string, erro
 	http.SetCookie(resp, &http.Cookie{
 		Name:     cookieName,
 		Value:    token,
-		Path:     "/",         // Make cookie available across the site.
-		HttpOnly: true,        // Prevent access via JavaScript.
-		Secure:   httpsCookie, // Use HTTPS only in prod. (set to false for local testing).
+		Path:     "/",          // Make cookie available across the site.
+		HttpOnly: true,         // Prevent access via JavaScript.
+		Secure:   secureCookie, // Use HTTPS only in prod. (set to false for local testing).
 		SameSite: http.SameSiteLaxMode,
 	})
 	return token, nil

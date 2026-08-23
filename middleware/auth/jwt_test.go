@@ -130,3 +130,55 @@ func TestJWTMiddleware(t *testing.T) {
 	}
 
 }
+
+// Test that JWT auth failures flow through the rex error pipeline as *rex.Error.
+func TestJWTErrorPipeline(t *testing.T) {
+	var captured error
+
+	router := rex.NewRouter()
+	router.Use(auth.JWT("test-secret", nil))
+	router.SetErrorHandler(&jwtCapturingHandler{capture: &captured, status: http.StatusUnauthorized})
+	router.GET("/protected", func(c *rex.Context) error { return nil })
+
+	// Missing token
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.Code)
+	}
+	if captured == nil {
+		t.Fatal("expected error to flow through the error pipeline")
+	}
+	rexErr, ok := captured.(*rex.Error)
+	if !ok {
+		t.Fatalf("expected *rex.Error, got %T", captured)
+	}
+	if rexErr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 error code, got %d", rexErr.Code)
+	}
+
+	// Invalid token
+	req = httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer invalid.token.here")
+	resp = httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.Code)
+	}
+	if captured == nil {
+		t.Fatal("expected error to flow through the error pipeline")
+	}
+}
+
+type jwtCapturingHandler struct {
+	capture *error
+	status  int
+}
+
+func (h *jwtCapturingHandler) Handle(c *rex.Context, err error) {
+	*h.capture = err
+	c.WriteHeader(h.status)
+}

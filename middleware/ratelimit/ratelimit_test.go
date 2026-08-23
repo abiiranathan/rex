@@ -125,3 +125,48 @@ func TestRateLimitCustomKey(t *testing.T) {
 		t.Error("Client A should be blocked")
 	}
 }
+
+func TestManagerCloseStopsCleanup(t *testing.T) {
+	m := NewManager(10, 10, 50*time.Millisecond)
+	m.Allow("key1")
+
+	// Close must be idempotent.
+	m.Close()
+	m.Close()
+
+	// Allow still works after close; only the cleanup goroutine stops.
+	if !m.Allow("key1") {
+		t.Fatal("expected request to be allowed after Close")
+	}
+}
+
+func TestRateLimitWithSharedManager(t *testing.T) {
+	manager := NewManager(2, 2, time.Minute)
+	defer manager.Close()
+
+	config := Config{
+		Rate:     2,
+		Capacity: 2,
+		Manager:  manager,
+	}
+
+	r := rex.NewRouter()
+	r.Use(New(config))
+	r.GET("/", func(c *rex.Context) error { return c.String("ok") })
+
+	for range 2 {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", w.Code)
+	}
+}

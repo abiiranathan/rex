@@ -532,7 +532,7 @@ func (f *failingResponseWriter) Flush() {}
 
 // Benchmark tests
 func BenchmarkStream_SimpleMessages(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/stream", nil)
 		ctx := rex.NewContext(w, req, nil)

@@ -37,7 +37,7 @@ func ErrorTemplate(errorTemplate string) RouterOption {
 
 // ContentBlock sets the name of the content block in the base layout template.
 // This block will be replaced with the rendered content of the view.
-// The default content block name is "content".
+// The default content block name is "Content" (rex.DefaultContentBlock).
 //
 // Example:
 //

@@ -137,7 +137,12 @@ func GzipLevel(level int, skipPaths ...string) rex.Middleware {
 			var wb *gzipWriter
 
 			restore := c.WrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
-				z, _ := gzip.NewWriterLevel(w, level)
+				// NewWriterLevel only fails for invalid levels; the level is
+				// validated above. Fall back to default compression regardless.
+				z, err := gzip.NewWriterLevel(w, level)
+				if err != nil {
+					z = gzip.NewWriter(w)
+				}
 				gw = z
 				wb = &gzipWriter{ResponseWriter: w, gw: z}
 				return wb

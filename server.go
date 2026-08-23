@@ -15,15 +15,23 @@ import (
 // Server wraps http.Server with graceful shutdown helpers and option-based configuration.
 type Server struct {
 	*http.Server
+
+	// h2 holds custom HTTP/2 settings supplied via WithHTTP2Options.
+	// HTTP/2 is configured exactly once after all options have been applied.
+	h2 *http2.Server
 }
 
 // ServerOption configures a Server.
 type ServerOption func(*Server)
 
 // NewServer creates a Server with HTTP/2 support.
+//
+// All options are applied before HTTP/2 is configured, so custom HTTP/2
+// settings and TLS configurations take effect without registering the
+// HTTP/2 handler more than once.
 func NewServer(addr string, handler http.Handler, options ...ServerOption) (*Server, error) {
 	server := &Server{
-		&http.Server{
+		Server: &http.Server{
 			Addr:         addr,
 			Handler:      handler,
 			ReadTimeout:  5 * time.Second,
@@ -35,14 +43,18 @@ func NewServer(addr string, handler http.Handler, options ...ServerOption) (*Ser
 		},
 	}
 
-	// Explicitly enable HTTP/2
-	if err := http2.ConfigureServer(server.Server, &http2.Server{}); err != nil {
-		return nil, err
-	}
-
 	for _, option := range options {
 		option(server)
 	}
+
+	// Explicitly enable HTTP/2 (exactly once).
+	if server.h2 == nil {
+		server.h2 = &http2.Server{}
+	}
+	if err := http2.ConfigureServer(server.Server, server.h2); err != nil {
+		return nil, err
+	}
+
 	return server, nil
 }
 
@@ -99,11 +111,11 @@ func WithTLSConfig(config *tls.Config) ServerOption {
 }
 
 // WithHTTP2Options configures HTTP/2 server settings.
+// The settings are applied when NewServer finishes initializing the server;
+// HTTP/2 is never registered more than once.
 func WithHTTP2Options(http2ServerOptions http2.Server) ServerOption {
 	return func(s *Server) {
-		if err := http2.ConfigureServer(s.Server, &http2ServerOptions); err != nil {
-			log.Println(err)
-		}
+		s.h2 = &http2ServerOptions
 	}
 }
 

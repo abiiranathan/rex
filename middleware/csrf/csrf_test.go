@@ -9,12 +9,8 @@ import (
 
 	"github.com/abiiranathan/rex"
 	"github.com/abiiranathan/rex/middleware/csrf"
-	"github.com/gorilla/sessions"
 	"github.com/stretchr/testify/require"
 )
-
-// Mock session store for testing.
-var store = sessions.NewCookieStore([]byte("test-secret"))
 
 // Middleware test helper to simulate an HTTP request.
 func testMiddleware(method, url string, body string, cookie *http.Cookie, handler http.Handler) *httptest.ResponseRecorder {
@@ -33,7 +29,7 @@ func testMiddleware(method, url string, body string, cookie *http.Cookie, handle
 // Test that the CSRF token is generated and set in the cookie.
 func TestCSRFTokenGeneration(t *testing.T) {
 	router := rex.NewRouter()
-	router.Use(csrf.New(store, true))
+	router.Use(csrf.New(true))
 
 	router.GET("/", func(c *rex.Context) error {
 		_, err := c.Response.Write([]byte("OK"))
@@ -83,7 +79,7 @@ func TestCSRFTokenValidationSuccess(t *testing.T) {
 	cookie := &http.Cookie{Name: "csrf_token", Value: token}
 
 	router := rex.NewRouter()
-	router.Use(csrf.New(store, false))
+	router.Use(csrf.New(false))
 
 	router.POST("/submit", func(c *rex.Context) error {
 		_, err := c.Response.Write([]byte("OK"))
@@ -105,7 +101,7 @@ func TestCSRFTokenValidationSuccess(t *testing.T) {
 // Test that CSRF token validation fails when the token is missing.
 func TestCSRFTokenValidationFailure_MissingToken(t *testing.T) {
 	router := rex.NewRouter()
-	router.Use(csrf.New(store, false))
+	router.Use(csrf.New(false))
 
 	router.POST("/submit", func(c *rex.Context) error {
 		_, err := c.Response.Write([]byte("OK"))
@@ -131,7 +127,7 @@ func TestCSRFTokenValidationFailure_InvalidToken(t *testing.T) {
 	cookie := &http.Cookie{Name: "csrf_token", Value: validToken}
 
 	router := rex.NewRouter()
-	router.Use(csrf.New(store, false))
+	router.Use(csrf.New(false))
 
 	router.POST("/submit", func(c *rex.Context) error {
 		_, err := c.Response.Write([]byte("OK"))
@@ -149,7 +145,7 @@ func TestCSRFTokenValidationFailure_InvalidToken(t *testing.T) {
 // Test that safe HTTP methods (GET, HEAD) bypass CSRF validation.
 func TestSafeMethodsBypassCSRFValidation(t *testing.T) {
 	router := rex.NewRouter()
-	router.Use(csrf.New(store, false))
+	router.Use(csrf.New(false))
 
 	router.GET("/", func(c *rex.Context) error {
 		_, err := c.Response.Write([]byte("OK"))
@@ -165,4 +161,34 @@ func TestSafeMethodsBypassCSRFValidation(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code, "Expected 200 OK response")
 		})
 	}
+}
+
+// Test that CSRF failures flow through the rex error pipeline as *rex.Error.
+func TestCSRFValidationErrorIsRexError(t *testing.T) {
+	var captured error
+
+	router := rex.NewRouter()
+	router.Use(csrf.New(false))
+	router.SetErrorHandler(&capturingHandler{capture: &captured, status: http.StatusForbidden})
+
+	router.POST("/submit", func(c *rex.Context) error { return nil })
+
+	resp := testMiddleware(http.MethodPost, "/submit", "", nil, router)
+
+	require.Equal(t, http.StatusForbidden, resp.Code)
+	require.Error(t, captured)
+
+	var rexErr *rex.Error
+	require.ErrorAs(t, captured, &rexErr)
+	require.Equal(t, http.StatusForbidden, rexErr.Code)
+}
+
+type capturingHandler struct {
+	capture *error
+	status  int
+}
+
+func (h *capturingHandler) Handle(c *rex.Context, err error) {
+	*h.capture = err
+	c.WriteHeader(h.status)
 }

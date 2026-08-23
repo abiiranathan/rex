@@ -103,8 +103,15 @@ func TestLogger_SkipIf(t *testing.T) {
 }
 
 func TestLogger_Flags_IP_UserAgent_Latency(t *testing.T) {
-	cfg := &Config{Format: TextFormat, Flags: LogIP | LogUserAgent | LogLatency}
-	r, buf := setupRouterWithLogger(t, cfg)
+	var buf bytes.Buffer
+	cfg := &Config{Format: TextFormat, Flags: LogIP | LogUserAgent | LogLatency, Output: &buf}
+	// Trust the direct peer so the X-Real-Ip header is honored.
+	r := rex.NewRouter(rex.WithTrustProxy("192.0.2.1"))
+	r.Use(New(cfg))
+	r.GET("/hello", func(c *rex.Context) error {
+		return c.String("ok")
+	})
+
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
 	req.Header.Set("User-Agent", "logger-test")

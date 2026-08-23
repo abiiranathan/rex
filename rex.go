@@ -29,6 +29,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,23 +47,20 @@ import (
 	en_translations "github.com/go-playground/validator/v10/translations/en"
 )
 
-var (
-	// StrictHome when set to true, only the root path will be matched
-	StrictHome = true
+const (
+	// DefaultContentBlock is the default template content block name
+	// used when a base layout is configured.
+	DefaultContentBlock = "Content"
 
-	// NoTrailingSlash when set to true, trailing slashes will be removed
-	NoTrailingSlash = true
-
-	// name of the template content block
-	contentBlock = "Content"
-
-	// Serve minified files if present instead of original file.
-	// This applies to StaticFS, Static functions.
-	ServeMinified = false
-
-	// MinExtensions is the slice of file extensions for which minified files are served.
-	MinExtensions = []string{".js", ".css"}
+	// DefaultMaxMemory is the default maximum memory (32 MB) used when
+	// parsing multipart forms. It can be overridden per router with
+	// the WithMaxMemory router option.
+	DefaultMaxMemory int64 = 32 << 20
 )
+
+// DefaultMinExtensions is the default list of file extensions for which
+// minified variants are served when serving minified assets is enabled.
+var DefaultMinExtensions = []string{".js", ".css"}
 
 // HandlerFunc is the signature for route handlers that can return errors
 type HandlerFunc func(c *Context) error
@@ -252,6 +250,36 @@ type Router struct {
 
 	// skipLog skips logging the request if it returns true
 	skipLog func(c *Context) bool
+
+	// strictHome matches only the exact root path when "/" is registered.
+	strictHome bool
+
+	// noTrailingSlash strips trailing slashes from route patterns.
+	noTrailingSlash bool
+
+	// serveMinified serves minified file variants (.min.js/.min.css) if present.
+	serveMinified bool
+
+	// minExtensions lists the file extensions eligible for minified serving.
+	minExtensions []string
+
+	// trustProxies is the list of proxy CIDRs whose forwarded headers are trusted.
+	trustProxies []*net.IPNet
+
+	// maxMemory is the maximum memory used to parse multipart forms.
+	maxMemory int64
+
+	// logQueue holds the async log handler when WithAsyncLogging is used,
+	// so CloseLogQueue can drain it during shutdown.
+	logQueue *AsyncLogHandler
+
+	// timezone is the default location for parsing form/query time values
+	// when none is provided to BodyParser/QueryParser.
+	timezone *time.Location
+
+	// state is the application state injected with WithState/SetState and
+	// accessed from handlers via Context.State or GetState[T].
+	state any
 }
 
 // RouterOption configures a Router during construction.
@@ -283,6 +311,179 @@ func SkipLog(skipLog func(c *Context) bool) RouterOption {
 	}
 }
 
+// WithStrictHome controls whether a registered "/" pattern matches only the
+// exact root path. Defaults to true, which registers "/" as "/{$}" internally.
+func WithStrictHome(strict bool) RouterOption {
+	return func(r *Router) {
+		r.strictHome = strict
+	}
+}
+
+// WithNoTrailingSlash controls whether trailing slashes are stripped from
+// route patterns before registration. Defaults to true.
+func WithNoTrailingSlash(noTrailing bool) RouterOption {
+	return func(r *Router) {
+		r.noTrailingSlash = noTrailing
+	}
+}
+
+// WithServeMinified enables serving minified asset variants (.min.js/.min.css)
+// from Static and StaticFS when present, falling back to the original file.
+// Defaults to false.
+func WithServeMinified(serve bool) RouterOption {
+	return func(r *Router) {
+		r.serveMinified = serve
+	}
+}
+
+// WithMinExtensions sets the file extensions eligible for minified serving
+// when WithServeMinified is enabled. Defaults to [".js", ".css"].
+func WithMinExtensions(extensions []string) RouterOption {
+	return func(r *Router) {
+		if len(extensions) > 0 {
+			r.minExtensions = slices.Clone(extensions)
+		}
+	}
+}
+
+// WithMaxMemory sets the maximum memory in bytes used to parse multipart
+// forms (BodyParser and FormFiles). Larger uploads are spilled to temporary
+// files by net/http. Defaults to DefaultMaxMemory (32 MB).
+func WithMaxMemory(bytes int64) RouterOption {
+	return func(r *Router) {
+		if bytes > 0 {
+			r.maxMemory = bytes
+		}
+	}
+}
+
+// WithTrustProxy configures the router to trust X-Forwarded-For and X-Real-Ip
+// headers only when the direct peer address matches one of the given CIDRs or
+// IP addresses (e.g. "10.0.0.0/8", "172.16.0.1").
+//
+// By default no proxies are trusted and proxy headers are always ignored,
+// preventing clients from spoofing their IP via forwarded headers. Requests
+// arriving from an untrusted peer never have their headers consulted, even if
+// they contain them.
+//
+// Panics on invalid CIDR notation; call it with validated input.
+func WithTrustProxy(cidrs ...string) RouterOption {
+	networks := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		cidr = strings.TrimSpace(cidr)
+
+		// Accept bare IPs by converting them to /32 (IPv4) or /128 (IPv6).
+		if !strings.Contains(cidr, "/") {
+			if ip := net.ParseIP(cidr); ip != nil {
+				bits := 32
+				if ip.To4() == nil {
+					bits = 128
+				}
+				cidr = fmt.Sprintf("%s/%d", cidr, bits)
+			}
+		}
+
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Sprintf("rex: invalid trusted proxy CIDR %q: %v", cidr, err))
+		}
+		networks = append(networks, network)
+	}
+
+	return func(r *Router) {
+		r.trustProxies = networks
+	}
+}
+
+// WithState injects shared application state into the router (similar to
+// axum's Router::with_state). Any value works, but a dedicated struct is the
+// idiomatic choice:
+//
+//	type App struct{ DB *sql.DB; Config Config }
+//	r := rex.NewRouter(rex.WithState(&App{DB: db}))
+//	r.GET("/users", func(c *rex.Context) error {
+//	    app := c.State().(*App)
+//	    ...
+//	})
+//
+// or with the type-safe helper:
+//
+//	app, ok := rex.GetState[*App](c)
+//
+// The state is shared by all requests: make it safe for concurrent use
+// (immutable values, or guard mutable fields with locks), just like an Arc
+// in Rust. Set it before serving begins; SetState mutates all in-flight
+// readers without synchronization.
+func WithState(state any) RouterOption {
+	return func(r *Router) {
+		r.state = state
+	}
+}
+
+// SetState replaces the application state. Prefer the WithState option and
+// set it during startup; this method is not synchronized against concurrent
+// Context.State reads.
+func (r *Router) SetState(state any) {
+	r.state = state
+}
+
+// isTrustedProxy reports whether ip belongs to one of the trusted proxy networks.
+func (r *Router) isTrustedProxy(ip net.IP) bool {
+	if len(r.trustProxies) == 0 || ip == nil {
+		return false
+	}
+	for _, network := range r.trustProxies {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// WithTimezone sets the default time.Location used when parsing date/time
+// form and query values (BodyParser, QueryParser). When unset,
+// rex.DefaultTimezone (UTC) applies. An explicit location argument to
+// BodyParser always takes precedence.
+func WithTimezone(loc *time.Location) RouterOption {
+	return func(r *Router) {
+		if loc != nil {
+			r.timezone = loc
+		}
+	}
+}
+
+// WithAsyncLogging delivers the router's internal request/error logs through
+// a bounded background queue (see AsyncLogHandler) so logging never blocks
+// request handling. queueSize <= 0 uses DefaultLogQueueSize.
+//
+// When the queue is full, records are dropped rather than slowing down
+// requests; the drop count is available via LogQueueDropped. Logging is
+// synchronous by default.
+func WithAsyncLogging(queueSize int) RouterOption {
+	return func(r *Router) {
+		r.logQueue = NewAsyncLogHandler(r.logger.Handler(), queueSize)
+		r.logger = slog.New(r.logQueue)
+	}
+}
+
+// CloseLogQueue drains and stops asynchronous logging started by
+// WithAsyncLogging. Call it during graceful shutdown so buffered records are
+// not lost. It is safe to call when async logging was never enabled.
+func (r *Router) CloseLogQueue() {
+	if r.logQueue != nil {
+		r.logQueue.Close()
+	}
+}
+
+// LogQueueDropped returns how many log records were dropped because the async
+// log queue was full. It returns 0 when async logging is not enabled.
+func (r *Router) LogQueueDropped() uint64 {
+	if r.logQueue == nil {
+		return 0
+	}
+	return r.logQueue.Dropped()
+}
+
 // GetLogger returns the *slog.Logger instance.
 func (c *Context) GetLogger() *slog.Logger {
 	return c.router.logger
@@ -302,11 +503,17 @@ func NewRouter(options ...RouterOption) *Router {
 		routesByPath:       make(map[string]*route),
 		passContextToViews: false,
 		baseLayout:         "",
-		contentBlock:       contentBlock,
+		contentBlock:       DefaultContentBlock,
 		viewsFs:            nil,
 		template:           nil,
 		groups:             make(map[string]*Group),
 		globalMiddlewares:  []Middleware{},
+		strictHome:         true,
+		noTrailingSlash:    true,
+		serveMinified:      false,
+		minExtensions:      slices.Clone(DefaultMinExtensions),
+		trustProxies:       nil,
+		maxMemory:          DefaultMaxMemory,
 		validator:          validator.New(validator.WithRequiredStructEnabled()),
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			AddSource: false,
@@ -320,48 +527,28 @@ func NewRouter(options ...RouterOption) *Router {
 		})),
 		errHandler: defaultErrorHandler,
 		errorHandlerFunc: func(c *Context, err error) {
-			// Log the error on exit to ensure that the correct status code is set.
-			defer func() {
-				if c.router.skipLog != nil && c.router.skipLog(c) {
-					return
+			// Handle the error first so the correct status code is set
+			// before the request is logged below.
+			if err != nil {
+				var rexErr *Error
+				if ve, ok := err.(validator.ValidationErrors); ok {
+					rexErr = ValidationErr(c.TranslateErrors(ve))
+				} else if fe, ok := err.(FormError); ok {
+					rexErr = FormErr(fe)
+				} else if re, ok := err.(*Error); ok {
+					rexErr = re
+				} else {
+					// For generic errors, wrap it in our new Error struct.
+					var defaultStatusCode = http.StatusInternalServerError
+					if c.StatusCode() >= http.StatusBadRequest && c.StatusCode() <= http.StatusNetworkAuthenticationRequired {
+						defaultStatusCode = c.StatusCode()
+					}
+					rexErr = &Error{Code: defaultStatusCode, wrappedError: err}
 				}
-
-				level := slog.LevelInfo
-				if err != nil {
-					level = slog.LevelError
-				}
-
-				args := []any{"latency", c.Latency().String(), "method", c.Method(), "status", c.StatusCode(), "path", c.Path()}
-				if err != nil {
-					args = append(args, "error", err.Error())
-				}
-				if c.router.loggerCallback != nil {
-					args = append(args, c.router.loggerCallback(c)...)
-				}
-				c.router.logger.Log(context.Background(), level, "", args...)
-			}()
-
-			// We must return early if there is no error.
-			if err == nil {
-				return
+				c.router.errHandler.Handle(c, rexErr)
 			}
 
-			var rexErr *Error
-			if ve, ok := err.(validator.ValidationErrors); ok {
-				rexErr = ValidationErr(c.TranslateErrors(ve))
-			} else if fe, ok := err.(FormError); ok {
-				rexErr = FormErr(fe)
-			} else if re, ok := err.(*Error); ok {
-				rexErr = re
-			} else {
-				// For generic errors, wrap it in our new Error struct.
-				var defaultStatusCode = http.StatusInternalServerError
-				if c.StatusCode() >= http.StatusBadRequest && c.StatusCode() <= http.StatusNetworkAuthenticationRequired {
-					defaultStatusCode = c.StatusCode()
-				}
-				rexErr = &Error{Code: defaultStatusCode, wrappedError: err}
-			}
-			c.router.errHandler.Handle(c, rexErr)
+			c.router.logRequest(c, err)
 		},
 	}
 
@@ -414,6 +601,48 @@ func (r *Router) Use(middlewares ...Middleware) {
 	r.globalMiddlewares = append(r.globalMiddlewares, middlewares...)
 }
 
+// logRequest logs the completed request. It is called once per request after
+// error handling so the final status code is included. It avoids per-request
+// allocations where possible: no closures, no []any boxing, and it returns
+// early when the log level is disabled.
+func (r *Router) logRequest(c *Context, err error) {
+	if r.skipLog != nil && r.skipLog(c) {
+		return
+	}
+
+	level := slog.LevelInfo
+	if err != nil {
+		level = slog.LevelError
+	}
+
+	ctx := context.Background()
+	if !r.logger.Enabled(ctx, level) {
+		return
+	}
+
+	attrs := make([]slog.Attr, 0, 5)
+	attrs = append(attrs,
+		slog.Duration("latency", c.Latency()),
+		slog.String("method", c.Method()),
+		slog.Int("status", c.StatusCode()),
+		slog.String("path", c.Path()),
+	)
+	if err != nil {
+		attrs = append(attrs, slog.String("error", err.Error()))
+	}
+	if r.loggerCallback != nil {
+		// The callback contract is an even number of key/value args;
+		// convert them to properly named attrs.
+		pairs := r.loggerCallback(c)
+		for i := 0; i+1 < len(pairs); i += 2 {
+			key, _ := pairs[i].(string)
+			attrs = append(attrs, slog.Any(key, pairs[i+1]))
+		}
+	}
+
+	r.logger.LogAttrs(ctx, level, "", attrs...)
+}
+
 // Pool for reusing context objects
 var ctxPool = sync.Pool{
 	New: func() any {
@@ -444,7 +673,18 @@ func (r *Router) InitContext(w http.ResponseWriter, req *http.Request) *Context 
 	c.Response = &c.rw
 	c.router = r
 	c.ctx = req.Context() // Capture parent context
-	c.locals = nil        // don't pre-allocate map of every request unless required.
+
+	// Zero per-request state defensively. PutContext->reset normally handles
+	// this, but contexts created by other paths may carry stale fields.
+	c.err = nil
+	c.latency = 0
+	c.contentTypeSet = false
+	c.currentRoute = nil
+	c.redirectOpts = RedirectOptions{}
+	c.hasRedirect = false
+	c.query = nil
+
+	c.locals = nil // don't pre-allocate map of every request unless required.
 	return c
 }
 
@@ -458,6 +698,15 @@ func (c *Context) reset() {
 	c.ctx = nil
 	c.redirectOpts = RedirectOptions{}
 	c.hasRedirect = false
+	c.query = nil
+
+	// Clear per-request state so pooled contexts never leak it into the
+	// next request (stale err would surface as a false error; stale
+	// contentTypeSet silently blocks future content-type overrides).
+	c.err = nil
+	c.latency = 0
+	c.contentTypeSet = false
+
 	if c.locals != nil {
 		clear(c.locals)
 		// No need to set it to nil
@@ -493,14 +742,14 @@ func applyMiddlewareChain(middlewares []Middleware, handler HandlerFunc) Handler
 	return wrapped
 }
 
-func normalizePattern(pattern string, isStatic bool) (muxPattern, routePath string) {
-	if !isStatic && NoTrailingSlash && pattern != "/" {
+func (r *Router) normalizePattern(pattern string, isStatic bool) (muxPattern, routePath string) {
+	if !isStatic && r.noTrailingSlash && pattern != "/" {
 		pattern = strings.TrimSuffix(pattern, "/")
 	}
 
 	routePath = pattern
 	muxPattern = pattern
-	if StrictHome && pattern == "/" {
+	if r.strictHome && pattern == "/" {
 		muxPattern = "/{$}"
 	}
 
@@ -509,7 +758,7 @@ func normalizePattern(pattern string, isStatic bool) (muxPattern, routePath stri
 
 // handle registers a new route with the given path and handler
 func (r *Router) handle(method, pattern string, handler HandlerFunc, isStatic bool, middlewares ...Middleware) *route {
-	muxPattern, routePath := normalizePattern(pattern, isStatic)
+	muxPattern, routePath := r.normalizePattern(pattern, isStatic)
 	globalMiddlewares := append([]Middleware(nil), r.globalMiddlewares...)
 	routeMiddlewares := append([]Middleware(nil), middlewares...)
 
@@ -632,7 +881,7 @@ func (r *Router) chain(middlewares []Middleware, handler HandlerFunc) HandlerFun
 	return applyMiddlewareChain(middlewares, handler)
 }
 
-func staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
+func (r *Router) staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		path := filepath.Join(dir, strings.TrimPrefix(req.URL.Path, prefix))
 		ext := filepath.Ext(path)
@@ -644,7 +893,7 @@ func staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
 			}
 		}
 
-		if ServeMinified && slices.Contains(MinExtensions, ext) {
+		if r.serveMinified && slices.Contains(r.minExtensions, ext) {
 			stat, err := os.Stat(path)
 			if err != nil || stat.IsDir() {
 				http.NotFound(w, req)
@@ -675,7 +924,8 @@ func staticHandler(prefix, dir string, cacheDuration int) http.HandlerFunc {
 // Static serves static assets at prefix from dir.
 // e.g r.Static("/static", "static").
 // This method will strip the prefix from the URL path.
-// To serve minified assets(JS and CSS) if present, call rex.ServeMinifiedAssetsIfPresent=true.
+// To serve minified assets(JS and CSS) if present, use the
+// WithServeMinified(true) router option.
 // To enable caching, provide maxAge seconds for cache duration.
 func (r *Router) Static(prefix, dir string, maxAge ...int) {
 	if !strings.HasSuffix(prefix, "/") {
@@ -687,7 +937,7 @@ func (r *Router) Static(prefix, dir string, maxAge ...int) {
 		cacheDuration = maxAge[0]
 	}
 
-	handler := r.WrapHandler(staticHandler(prefix, dir, cacheDuration))
+	handler := r.WrapHandler(r.staticHandler(prefix, dir, cacheDuration))
 	r.handle(http.MethodGet, prefix, handler, true)
 }
 
@@ -758,12 +1008,13 @@ func (r *Router) FaviconFS(fs http.FileSystem, path string) {
 
 type minifiedFS struct {
 	http.FileSystem
+	extensions []string
 }
 
 // Open opens a file, preferring a minified variant when configured and available.
 func (mfs *minifiedFS) Open(name string) (http.File, error) {
 	ext := filepath.Ext(name)
-	if slices.Contains(MinExtensions, ext) {
+	if slices.Contains(mfs.extensions, ext) {
 		minifiedName := fmt.Sprintf("%s.min%s", strings.TrimSuffix(name, ext), ext)
 		if f, err := mfs.FileSystem.Open(minifiedName); err == nil {
 			return f, nil
@@ -790,8 +1041,8 @@ func (r *Router) StaticFS(prefix string, fs http.FileSystem, maxAge ...int) {
 		cacheDuration = maxAge[0]
 	}
 
-	if ServeMinified {
-		fs = &minifiedFS{fs}
+	if r.serveMinified {
+		fs = &minifiedFS{FileSystem: fs, extensions: r.minExtensions}
 	}
 
 	// Create file server for the http.FileSystem
@@ -842,17 +1093,35 @@ func (c *Context) RedirectRoute(pathname string, options ...RedirectOptions) err
 		opts = defaultRedirectOptions
 	}
 
-	// find the mathing route
+	// find the matching route
 	target, ok := c.router.routesByPath[pathname]
 	if !ok {
 		c.Response.WriteHeader(http.StatusNotFound)
 		return fmt.Errorf("route not found")
 	}
 
-	c.Response.WriteHeader(opts.Status)
+	// Record the redirect status without sending it: if the target handler
+	// writes a response, this status goes out with it; if the handler sends
+	// its own status, that wins instead of triggering a superfluous
+	// WriteHeader warning.
+	rw, tracked := c.Response.(*ResponseWriter)
+	if !tracked {
+		// Foreign writer: cannot detect whether the target sends a status,
+		// so preserve the legacy behavior.
+		c.Response.WriteHeader(opts.Status)
+	} else {
+		rw.SetStatus(opts.Status)
+	}
+
 	c.redirectOpts = opts
 	c.hasRedirect = true
-	return target.execute(c)
+
+	err := target.execute(c)
+
+	if tracked && !rw.statusSent {
+		rw.WriteHeader(opts.Status)
+	}
+	return err
 }
 
 // Returns the redirect options set in the context when RedirectRoute is called.

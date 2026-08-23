@@ -1,6 +1,7 @@
 package rex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -9,9 +10,12 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -38,6 +42,7 @@ type Context struct {
 	ctx            context.Context // Parent Context
 	router         *Router         // Instance of the Router.
 	locals         map[string]any  // Overflow or materialized locals map
+	query          url.Values      // Lazily parsed query parameters (cached)
 	redirectOpts   RedirectOptions
 	currentRoute   *route        // The current route.
 	latency        time.Duration // Request latency tracked by router
@@ -50,14 +55,18 @@ type Context struct {
 // NewContext creates a new Context instance for the given request and response.
 // This is primarily useful for testing but can also be used when manually
 // creating contexts outside of the normal routing flow.
+// The writer is wrapped with rex's tracking ResponseWriter so StatusCode()
+// and SetSkipBody() behave consistently with routed requests.
 func NewContext(w http.ResponseWriter, r *http.Request, router *Router) *Context {
-	return &Context{
-		Request:  r,
-		Response: w,
-		ctx:      r.Context(),
-		router:   router,
-		locals:   make(map[string]any, 16),
+	c := &Context{
+		Request: r,
+		ctx:     r.Context(),
+		router:  router,
+		locals:  make(map[string]any, 16),
 	}
+	c.rw = ResponseWriter{writer: w, status: http.StatusOK}
+	c.Response = &c.rw
+	return c
 }
 
 // Deadline implements context.Context.
@@ -129,42 +138,93 @@ func (c *Context) Status(status int) *Context {
 }
 
 // JSON sends a JSON response.
+// The payload is buffered so Content-Length can be set (avoiding chunked
+// transfer encoding); the buffer is pooled to keep steady-state allocation low.
 func (c *Context) JSON(data any) error {
-	c.Response.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(c.Response).Encode(data)
+	c.SetContentType(ContentTypeJSON)
+
+	buf := respBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	if err := json.NewEncoder(buf).Encode(data); err != nil {
+		putRespBuf(buf)
+		return err
+	}
+
+	c.Response.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	_, err := c.Response.Write(buf.Bytes())
+	putRespBuf(buf)
+	return err
 }
 
-// XML sends an XML response
+// XML sends an XML response.
 func (c *Context) XML(data any) error {
-	c.Response.Header().Set("Content-Type", "application/xml")
-	return xml.NewEncoder(c.Response).Encode(data)
+	c.SetContentType(ContentTypeXML)
+
+	buf := respBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	enc := xml.NewEncoder(buf)
+	if err := enc.Encode(data); err != nil {
+		putRespBuf(buf)
+		return err
+	}
+	if err := enc.Flush(); err != nil {
+		putRespBuf(buf)
+		return err
+	}
+
+	c.Response.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	_, err := c.Response.Write(buf.Bytes())
+	putRespBuf(buf)
+	return err
 }
 
 // String sends a string response
 func (c *Context) String(text string) error {
-	c.Response.Header().Set("Content-Type", "text/plain")
+	c.SetContentType(ContentTypeText)
 	_, err := io.WriteString(c.Response, text)
 	return err
 }
 
 // ContentType returns the request content type without parameters such as charset or multipart boundaries.
 func (c *Context) ContentType() string {
-	return strings.Split(c.Request.Header.Get("Content-Type"), ";")[0]
+	contentType := c.Request.Header.Get("Content-Type")
+	if i := strings.IndexByte(contentType, ';'); i >= 0 {
+		return contentType[:i]
+	}
+	return contentType
 }
 
 // AcceptHeader returns the first media type from the Accept header.
 func (c *Context) AcceptHeader() string {
 	accept := c.Request.Header.Get("Accept")
-
 	// accept header may contain multiple values and encoding types
-	return strings.Split(accept, ",")[0]
+	if i := strings.IndexByte(accept, ','); i >= 0 {
+		return accept[:i]
+	}
+	return accept
 }
 
 // HTML sends an HTML response.
 func (c *Context) HTML(html string) error {
-	c.Response.Header().Set("Content-Type", "text/html")
+	c.SetContentType(ContentTypeHTML)
 	_, err := c.Response.Write([]byte(html))
 	return err
+}
+
+// respBufPool recycles response serialization buffers.
+var respBufPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
+
+func putRespBuf(buf *bytes.Buffer) {
+	const maxRetainedSize = 64 << 10 // don't retain huge payloads
+	if buf.Cap() > maxRetainedSize {
+		return
+	}
+	buf.Reset()
+	respBufPool.Put(buf)
 }
 
 // WriteHeader writes the response status code.
@@ -217,61 +277,101 @@ func (c *Context) Param(name string) string {
 	return p
 }
 
+// parseIntWithDefault parses s as a signed integer of the given bit size,
+// returning defaults[0] (or 0) when s is empty or unparsable.
+func parseIntWithDefault[T int | int64](s string, bitSize int, defaults ...T) T {
+	if s == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	n, err := strconv.ParseInt(s, 10, bitSize)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return T(n)
+}
+
+// parseUintWithDefault parses s as an unsigned integer, returning defaults[0]
+// (or 0) when s is empty, negative, or unparsable.
+func parseUintWithDefault(s string, defaults ...uint) uint {
+	if s == "" && len(defaults) > 0 {
+		return defaults[0]
+	}
+
+	n, err := strconv.ParseUint(s, 10, strconv.IntSize)
+	if err != nil {
+		if len(defaults) > 0 {
+			return defaults[0]
+		}
+		return 0
+	}
+	return uint(n)
+}
+
 // ParamInt returns the value of the parameter as an integer.
 // If the parameter is not found, it checks the redirect options.
 func (c *Context) ParamInt(key string, defaults ...int) int {
-	v := c.Param(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
+	return parseIntWithDefault(c.Param(key), strconv.IntSize, defaults...)
 }
 
-// ParamUint returns the value of the parameter as an unsigned integer
+// ParamUint returns the value of the parameter as an unsigned integer.
+// Negative values or values exceeding the platform uint size return the default.
 func (c *Context) ParamUint(key string, defaults ...uint) uint {
-	v := c.Param(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return uint(vInt)
+	return parseUintWithDefault(c.Param(key), defaults...)
 }
 
 // ParamInt64 returns the value of the parameter as an int64.
 func (c *Context) ParamInt64(key string, defaults ...int64) int64 {
-	v := c.Param(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
+	return parseIntWithDefault(c.Param(key), 64, defaults...)
+}
 
-	vInt, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
+// queryValues returns the parsed query parameters, parsing them lazily on
+// first access and caching the result so repeated Query* calls do not
+// re-parse and re-allocate on every request.
+func (c *Context) queryValues() url.Values {
+	if c.query == nil {
+		c.query = c.Request.URL.Query()
 	}
-	return vInt
+	return c.query
+}
+
+// defaultTimezone returns the location used when parsing date/time values:
+// the router's configured timezone (WithTimezone) if set, otherwise
+// rex.DefaultTimezone.
+func (c *Context) defaultTimezone() *time.Location {
+	if c.router != nil && c.router.timezone != nil {
+		return c.router.timezone
+	}
+	return DefaultTimezone
+}
+
+// State returns the shared application state injected via WithState/SetState,
+// or nil when none was configured. Type-assert the result or prefer the
+// type-safe rex.GetState[T] helper.
+func (c *Context) State() any {
+	if c.router == nil {
+		return nil
+	}
+	return c.router.state
+}
+
+// GetState returns the application state as T. It reports false when no state
+// was configured or the stored value does not match T.
+func GetState[T any](c *Context) (T, bool) {
+	var zero T
+	if c.router == nil {
+		return zero, false
+	}
+	state, ok := c.router.state.(T)
+	return state, ok
 }
 
 // Query returns the value of the query as a string.
 func (c *Context) Query(key string, defaults ...string) string {
-	v := c.Request.URL.Query().Get(key)
+	v := c.queryValues().Get(key)
 	if v == "" {
 		// check redirect query params
 		opts, ok := c.redirectOptions()
@@ -288,53 +388,18 @@ func (c *Context) Query(key string, defaults ...string) string {
 
 // QueryInt returns the value of the query as an integer.
 func (c *Context) QueryInt(key string, defaults ...int) int {
-	v := c.Query(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
+	return parseIntWithDefault(c.Query(key), strconv.IntSize, defaults...)
 }
 
 // QueryInt64 returns the value of the query as an int64.
 func (c *Context) QueryInt64(key string, defaults ...int64) int64 {
-	v := c.Query(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
+	return parseIntWithDefault(c.Query(key), 64, defaults...)
 }
 
-// QueryUInt returns the value of the query as an unsigned integer
+// QueryUInt returns the value of the query as an unsigned integer.
+// Negative values or values exceeding the platform uint size return the default.
 func (c *Context) QueryUInt(key string, defaults ...uint) uint {
-	v := c.Query(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return uint(vInt)
+	return parseUintWithDefault(c.Query(key), defaults...)
 }
 
 // Set stores a value in the context
@@ -389,45 +454,74 @@ func (c *Context) Redirect(url string, status ...int) error {
 }
 
 // IP returns the client's IP address.
-// It tries to get the IP from the X-Forwarded-For header first, then falls back to the X-Real-Ip header.
-// If both headers are not set, it returns the remote address from the request.
+//
+// By default (no trusted proxies configured via the WithTrustProxy router
+// option), proxy headers are never trusted and the remote address of the
+// direct TCP peer is returned. This prevents clients from spoofing their IP
+// by setting X-Forwarded-For or X-Real-Ip headers.
+//
+// When trusted proxies are configured and the request arrives from a trusted
+// proxy, the client IP is resolved by walking X-Forwarded-For from right to
+// left and returning the first untrusted address, falling back to X-Real-Ip,
+// then to the remote address.
 func (c *Context) IP() (string, error) {
-	ips := c.Request.Header.Get("X-Forwarded-For")
-	splitIps := strings.Split(ips, ",")
-
-	if len(splitIps) > 0 {
-		// get last IP in list since ELB prepends other user defined IPs,
-		// meaning the last one is the actual client IP.
-		netIP := net.ParseIP(splitIps[len(splitIps)-1])
-		if netIP != nil {
-			return netIP.String(), nil
-		}
-	}
-
-	// Try to get the IP from the X-Real-Ip header.
-	ip := c.Request.Header.Get("X-Real-Ip")
-	if ip != "" {
-		return ip, nil
-	}
-
 	ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
 	if err != nil {
-		return "", err
+		ip = strings.TrimSpace(c.Request.RemoteAddr)
+	}
+	remoteIP := net.ParseIP(ip)
+	if remoteIP == nil {
+		return "", errors.New("invalid remote address")
 	}
 
-	netIP := net.ParseIP(ip)
-	if netIP != nil {
-		ip := netIP.String()
-		if ip == "::1" {
-			return "127.0.0.1", nil
-		}
-		return ip, nil
+	router := c.router
+	if router == nil || !router.isTrustedProxy(remoteIP) {
+		return normalizeLoopback(remoteIP), nil
 	}
-	return "", errors.New("IP not found")
+
+	// The direct peer is a trusted proxy; walk X-Forwarded-For from right
+	// to left and return the first address not belonging to a trusted proxy.
+	xff := strings.Split(c.Request.Header.Get("X-Forwarded-For"), ",")
+	for _, x := range slices.Backward(xff) {
+		parsed := net.ParseIP(strings.TrimSpace(x))
+		if parsed == nil {
+			continue
+		}
+		if !router.isTrustedProxy(parsed) {
+			return normalizeLoopback(parsed), nil
+		}
+	}
+
+	// Fall back to X-Real-Ip set by the trusted proxy.
+	if real := strings.TrimSpace(c.Request.Header.Get("X-Real-Ip")); real != "" {
+		if parsed := net.ParseIP(real); parsed != nil && !router.isTrustedProxy(parsed) {
+			return normalizeLoopback(parsed), nil
+		}
+	}
+
+	// No usable forwarded headers; fall back to the trusted peer's address.
+	return normalizeLoopback(remoteIP), nil
+}
+
+// normalizeLoopback maps IPv6 loopback (::1) to IPv4 loopback for convenience.
+func normalizeLoopback(ip net.IP) string {
+	if ip.Equal(net.IPv6loopback) {
+		return "127.0.0.1"
+	}
+	return ip.String()
 }
 
 // TranslateErrors returns English translations for validation errors.
+// If no translator is available, the raw validation tags are returned
+// keyed by field name instead of panicking.
 func (c *Context) TranslateErrors(errs validator.ValidationErrors) map[string]string {
+	if c.router == nil || c.router.translator == nil {
+		out := make(map[string]string, len(errs))
+		for _, e := range errs {
+			out[e.Field()] = e.Tag()
+		}
+		return out
+	}
 	return errs.Translate(c.router.translator)
 }
 
@@ -439,37 +533,14 @@ func (c *Context) FormValue(key string) string {
 // FormValueInt returns the form value for key as an integer.
 // If the value is not found or cannot be converted to an integer, it returns the default value.
 func (c *Context) FormValueInt(key string, defaults ...int) int {
-	v := c.FormValue(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return vInt
+	return parseIntWithDefault(c.FormValue(key), strconv.IntSize, defaults...)
 }
 
 // FormValueUInt returns the form value for key as an unsigned integer.
-// If the value is not found or cannot be converted to an unsigned integer, it returns the default value.
+// If the value is not found, negative, or cannot be converted to an unsigned
+// integer, it returns the default value.
 func (c *Context) FormValueUInt(key string, defaults ...uint) uint {
-	v := c.FormValue(key)
-	if v == "" && len(defaults) > 0 {
-		return defaults[0]
-	}
-
-	vInt, err := strconv.Atoi(v)
-	if err != nil {
-		if len(defaults) > 0 {
-			return defaults[0]
-		}
-		return 0
-	}
-	return uint(vInt)
+	return parseUintWithDefault(c.FormValue(key), defaults...)
 }
 
 // FormFile returns the first uploaded file for key.
@@ -478,8 +549,13 @@ func (c *Context) FormFile(key string) (multipart.File, *multipart.FileHeader, e
 }
 
 // FormFiles returns all uploaded files for key after parsing the multipart form.
+// The default max memory is the router's configured max memory (WithMaxMemory),
+// or DefaultMaxMemory if not set. It can be overridden per call.
 func (c *Context) FormFiles(key string, maxMemory ...int64) ([]*multipart.FileHeader, error) {
-	var memory int64 = 10 << 20 // 10 MB
+	var memory int64 = DefaultMaxMemory
+	if c.router != nil && c.router.maxMemory > 0 {
+		memory = c.router.maxMemory
+	}
 	if len(maxMemory) > 0 {
 		memory = maxMemory[0]
 	}
@@ -499,7 +575,7 @@ func (c *Context) FormFiles(key string, maxMemory ...int64) ([]*multipart.FileHe
 func (c *Context) SaveFile(fh *multipart.FileHeader, target string) error {
 	src, err := fh.Open()
 	if err != nil {
-		return errors.Wrap(err, "failed to open multipart.FileHeader)")
+		return errors.Wrap(err, "failed to open multipart.FileHeader")
 	}
 	defer src.Close()
 

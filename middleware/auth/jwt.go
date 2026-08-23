@@ -15,13 +15,16 @@ type claimsType string
 type jwtSkipped string
 
 const (
-	jwtClaimsKey     claimsType = "jwt_laims_key"
+	jwtClaimsKey     claimsType = "jwt_claims_key"
 	tokenPrefix      string     = "Bearer "
 	jwtAuthIsSkipped jwtSkipped = "jwt_auth_skipped"
 )
 
 // JWT creates a JWT middleware with the given secret and options.
 // If skipFunc returns true, authentication is skipped.
+//
+// Authentication failures are returned as *rex.Error values (HTTP 401), so
+// they flow through the router's centralized error handling pipeline.
 func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 	return func(next rex.HandlerFunc) rex.HandlerFunc {
 		return func(c *rex.Context) error {
@@ -40,15 +43,13 @@ func JWT(secret string, skipFunc func(c *rex.Context) bool) rex.Middleware {
 			tokenString = strings.TrimSpace(tokenString)
 
 			if tokenString == "" {
-				c.WriteHeader(http.StatusUnauthorized)
-				return nil
+				return rex.NewError(http.StatusUnauthorized, "missing bearer token")
 			}
 
 			// Verify the token
 			claims, err := VerifyJWToken(secret, tokenString)
 			if err != nil {
-				c.WriteHeader(http.StatusUnauthorized)
-				return nil
+				return rex.NewErrorWrap(http.StatusUnauthorized, "invalid or expired token", err)
 			}
 
 			// Set the claims in the context
