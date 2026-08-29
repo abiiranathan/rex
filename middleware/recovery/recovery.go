@@ -122,7 +122,7 @@ func New(opts ...Option) rex.Middleware {
 }
 
 // convertPanicToError safely converts a panic value to an error
-func convertPanicToError(r interface{}) error {
+func convertPanicToError(r any) error {
 	switch v := r.(type) {
 	case error:
 		return v

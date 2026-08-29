@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -190,8 +189,8 @@ func (c *Context) String(text string) error {
 // ContentType returns the request content type without parameters such as charset or multipart boundaries.
 func (c *Context) ContentType() string {
 	contentType := c.Request.Header.Get("Content-Type")
-	if i := strings.IndexByte(contentType, ';'); i >= 0 {
-		return contentType[:i]
+	if before, _, ok := strings.Cut(contentType, ";"); ok {
+		return before
 	}
 	return contentType
 }
@@ -200,8 +199,8 @@ func (c *Context) ContentType() string {
 func (c *Context) AcceptHeader() string {
 	accept := c.Request.Header.Get("Accept")
 	// accept header may contain multiple values and encoding types
-	if i := strings.IndexByte(accept, ','); i >= 0 {
-		return accept[:i]
+	if before, _, ok := strings.Cut(accept, ","); ok {
+		return before
 	}
 	return accept
 }
@@ -360,7 +359,7 @@ func (c *Context) State() any {
 
 // GetState returns the application state as T. It reports false when no state
 // was configured or the stored value does not match T.
-func GetState[T any](c *Context) (T, bool) {
+func (c *Context) GetState[T any]() (T, bool) {
 	var zero T
 	if c.router == nil {
 		return zero, false
@@ -479,11 +478,16 @@ func (c *Context) IP() (string, error) {
 		return normalizeLoopback(remoteIP), nil
 	}
 
-	// The direct peer is a trusted proxy; walk X-Forwarded-For from right
-	// to left and return the first address not belonging to a trusted proxy.
-	xff := strings.Split(c.Request.Header.Get("X-Forwarded-For"), ",")
-	for _, x := range slices.Backward(xff) {
-		parsed := net.ParseIP(strings.TrimSpace(x))
+	// Walk X-Forwarded-For right-to-left without allocating a []string.
+	xff := c.Request.Header.Get("X-Forwarded-For")
+	for xff != "" {
+		var field string
+		if idx := strings.LastIndexByte(xff, ','); idx >= 0 {
+			field, xff = xff[idx+1:], xff[:idx]
+		} else {
+			field, xff = xff, ""
+		}
+		parsed := net.ParseIP(strings.TrimSpace(field))
 		if parsed == nil {
 			continue
 		}
@@ -492,14 +496,12 @@ func (c *Context) IP() (string, error) {
 		}
 	}
 
-	// Fall back to X-Real-Ip set by the trusted proxy.
 	if real := strings.TrimSpace(c.Request.Header.Get("X-Real-Ip")); real != "" {
 		if parsed := net.ParseIP(real); parsed != nil && !router.isTrustedProxy(parsed) {
 			return normalizeLoopback(parsed), nil
 		}
 	}
 
-	// No usable forwarded headers; fall back to the trusted peer's address.
 	return normalizeLoopback(remoteIP), nil
 }
 

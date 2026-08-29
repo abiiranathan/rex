@@ -18,7 +18,7 @@ func TestWithState(t *testing.T) {
 	t.Parallel()
 	r := rex.NewRouter(rex.WithState(&appState{Name: "myapp"}))
 	r.GET("/state", func(c *rex.Context) error {
-		app, ok := rex.GetState[*appState](c)
+		app, ok := c.GetState[*appState]()
 		require.True(t, ok)
 		return c.String(app.Name)
 	})
@@ -43,11 +43,11 @@ func TestGetStateTypeMismatch(t *testing.T) {
 	t.Parallel()
 	r := rex.NewRouter(rex.WithState("a string"))
 	r.GET("/state", func(c *rex.Context) error {
-		app, ok := rex.GetState[*appState](c)
+		app, ok := c.GetState[*appState]()
 		require.False(t, ok)
 		require.Nil(t, app)
 
-		s, ok := rex.GetState[string](c)
+		s, ok := c.GetState[string]()
 		require.True(t, ok)
 		require.Equal(t, "a string", s)
 		return nil
@@ -63,7 +63,7 @@ func TestStateWithoutRouter(t *testing.T) {
 	c := rex.NewContext(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), nil)
 	require.Nil(t, c.State())
 
-	_, ok := rex.GetState[*appState](c)
+	_, ok := c.GetState[*appState]()
 	require.False(t, ok)
 }
 
@@ -71,8 +71,9 @@ func TestStateSharedAcrossRequests(t *testing.T) {
 	t.Parallel()
 	counter := new(int64)
 	r := rex.NewRouter(rex.WithState(counter))
+
 	r.GET("/inc", func(c *rex.Context) error {
-		n, _ := rex.GetState[*int64](c)
+		n, _ := c.GetState[*int64]()
 		*n++
 		return c.String("ok")
 	})

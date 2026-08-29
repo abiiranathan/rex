@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -171,6 +172,6 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	defer srv.Shutdown()
+	defer srv.Shutdown(context.Background())
 	log.Fatalln(srv.ListenAndServe())
 }

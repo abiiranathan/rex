@@ -1,17 +1,14 @@
 module github.com/abiiranathan/rex
 
-go 1.26
-
-require (
-	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/gorilla/securecookie v1.1.2
-)
+go 1.27
 
 require (
 	github.com/andybalholm/brotli v1.1.1
 	github.com/go-playground/locales v0.14.1
 	github.com/go-playground/universal-translator v0.18.1
 	github.com/go-playground/validator/v10 v10.30.3
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/securecookie v1.1.2
 	github.com/gorilla/sessions v1.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.4

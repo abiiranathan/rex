@@ -27,6 +27,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -736,8 +737,8 @@ func applyMiddlewareChain(middlewares []Middleware, handler HandlerFunc) Handler
 	}
 
 	wrapped := handler
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		wrapped = middlewares[i](wrapped)
+	for _, middleware := range slices.Backward(middlewares) {
+		wrapped = middleware(wrapped)
 	}
 	return wrapped
 }
@@ -989,7 +990,7 @@ func (r *Router) FaviconFS(fs http.FileSystem, path string) {
 		}
 
 		var data = make([]byte, stat.Size())
-		_, err = f.Read(data)
+		_, err = io.ReadFull(f, data)
 		if err != nil {
 			http.NotFound(w, req)
 			return

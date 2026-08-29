@@ -164,7 +164,7 @@ func TestServerShutdown(t *testing.T) {
 		_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
 	}()
 
-	server.Shutdown(2 * time.Second)
+	server.Shutdown(t.Context(), 2*time.Second)
 }
 
 // CertConfig holds configuration for certificate generation

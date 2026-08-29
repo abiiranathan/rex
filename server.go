@@ -60,19 +60,17 @@ func NewServer(addr string, handler http.Handler, options ...ServerOption) (*Ser
 
 // Shutdown gracefully shuts down the server.
 // The default timeout is 5 seconds to wait for pending connections.
-func (s *Server) Shutdown(timeout ...time.Duration) {
-	var t time.Duration
+func (s *Server) Shutdown(ctx context.Context, timeout ...time.Duration) {
+	var waitTimeout = 5 * time.Second
 	if len(timeout) > 0 {
-		t = timeout[0]
-	} else {
-		t = 5 * time.Second
+		waitTimeout = timeout[0]
 	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit
 
-	ctx, cancel := context.WithTimeout(context.Background(), t)
+	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
 	defer cancel()
 
 	if err := s.Server.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
@@ -83,21 +81,21 @@ func (s *Server) Shutdown(timeout ...time.Duration) {
 // WithReadTimeout sets the server read timeout.
 func WithReadTimeout(d time.Duration) ServerOption {
 	return func(s *Server) {
-		s.Server.ReadTimeout = d
+		s.ReadTimeout = d
 	}
 }
 
 // WithWriteTimeout sets the server write timeout.
 func WithWriteTimeout(d time.Duration) ServerOption {
 	return func(s *Server) {
-		s.Server.WriteTimeout = d
+		s.WriteTimeout = d
 	}
 }
 
 // WithIdleTimeout sets the server idle timeout.
 func WithIdleTimeout(d time.Duration) ServerOption {
 	return func(s *Server) {
-		s.Server.IdleTimeout = d
+		s.IdleTimeout = d
 	}
 }
 
@@ -106,7 +104,7 @@ func WithTLSConfig(config *tls.Config) ServerOption {
 	return func(s *Server) {
 		// Ensure HTTP/2 support is maintained
 		config.NextProtos = []string{"h2", "http/1.1"}
-		s.Server.TLSConfig = config
+		s.TLSConfig = config
 	}
 }
 

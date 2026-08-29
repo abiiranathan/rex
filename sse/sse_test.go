@@ -469,8 +469,8 @@ func TestStream_ComplexJSON(t *testing.T) {
 	lines := strings.Split(body, "\n")
 	var jsonData string
 	for _, line := range lines {
-		if strings.HasPrefix(line, "data: ") {
-			jsonData = strings.TrimPrefix(line, "data: ")
+		if after, ok := strings.CutPrefix(line, "data: "); ok {
+			jsonData = after
 			break
 		}
 	}
@@ -561,7 +561,7 @@ func BenchmarkStream_SimpleMessages(b *testing.B) {
 		ctx := rex.NewContext(w, req, nil)
 
 		ch := make(chan any, 100)
-		for j := 0; j < 100; j++ {
+		for range 100 {
 			ch <- "message"
 		}
 		close(ch)

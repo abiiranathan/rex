@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -63,6 +64,12 @@ func (e FormError) Error() string {
 		return fmt.Sprintf("BodyParser error: field=%q kind=%s, err=%s", wrappedError.Field, wrappedError.Kind, wrappedError.Err)
 	}
 	return fmt.Sprintf("BodyParser error: field=%q kind=%s, err=%s", e.Field, e.Kind, e.Err)
+}
+
+// Unwrap returns the underlying error, allowing errors.Is and errors.As
+// to see through a FormError to its cause.
+func (e FormError) Unwrap() error {
+	return e.Err
 }
 
 // MarshalJSON marshals the error to JSON.
@@ -242,58 +249,84 @@ func KebabCase(s string) string {
 	return strings.ToLower(res.String())
 }
 
-// Parses the form data and stores the result in v.
-// Default tag name is "form". You can specify a different tag name using the tag argument.
-// Forexample "query" tag name will parse the form data using the "query" tag.
-func (c *Context) parseFormData(data map[string]any, v any, timezone *time.Location, tag ...string) error {
-	var tagName string = "form"
-	if len(tag) > 0 {
-		tagName = tag[0]
+// formFieldMeta is the pre-parsed, per-struct-field metadata needed by
+// parseFormData. Computed once per (reflect.Type, tagName) pair and cached,
+// since struct tags never change at runtime.
+type formFieldMeta struct {
+	name     string // Go struct field name (for error messages)
+	tagName  string // resolved tag key (form/query/json/snake_case)
+	required bool
+	index    int
+}
+
+// formMetaCache caches parsed field metadata keyed by (type, tag namespace).
+// Safe for concurrent use by multiple goroutines.
+var formMetaCache sync.Map // map[formMetaKey][]formFieldMeta
+
+type formMetaKey struct {
+	t   reflect.Type
+	tag string
+}
+
+func getFormFieldMeta(rt reflect.Type, tagName string) []formFieldMeta {
+	key := formMetaKey{t: rt, tag: tagName}
+	if v, ok := formMetaCache.Load(key); ok {
+		return v.([]formFieldMeta)
 	}
 
-	rv := reflect.ValueOf(v).Elem()
-	rt := rv.Type()
-
-	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
+	meta := make([]formFieldMeta, rt.NumField())
+	for index := 0; index < rt.NumField(); index++ {
+		field := rt.Field(index)
 		tag := field.Tag.Get(tagName)
 		if tag == "" {
-			// try json tag name and fallback to snake case
 			tag = field.Tag.Get("json")
-
-			// If there is no json tag, use the snake_case of the field name
 			if tag == "" {
 				tag = SnakeCase(field.Name)
 			}
 		}
 
 		tagList := strings.Split(tag, ",")
-		for i := range tagList {
-			tagList[i] = strings.TrimSpace(tagList[i])
+		for j := range tagList {
+			tagList[j] = strings.TrimSpace(tagList[j])
 		}
 
-		// Take tag name to be the first in the tagList
-		tag = tagList[0]
+		meta[index] = formFieldMeta{
+			name:     field.Name,
+			tagName:  tagList[0],
+			required: slices.Contains(tagList, "required") || field.Tag.Get("required") == "true",
+			index:    index,
+		}
+	}
 
-		required := slices.Contains(tagList, "required") || field.Tag.Get("required") == "true"
-		value, ok := data[tag]
-		if !ok && required {
+	actual, _ := formMetaCache.LoadOrStore(key, meta)
+	return actual.([]formFieldMeta)
+}
+
+// Parses the form data and stores the result in v.
+// Default tag name is "form". You can specify a different tag name using the tag argument.
+// Forexample "query" tag name will parse the form data using the "query" tag.
+func (c *Context) parseFormData(data map[string]any, v any, timezone *time.Location, tag ...string) error {
+	tagName := "form"
+	if len(tag) > 0 {
+		tagName = tag[0]
+	}
+
+	rv := reflect.ValueOf(v).Elem()
+	meta := getFormFieldMeta(rv.Type(), tagName)
+
+	for _, m := range meta {
+		value, ok := data[m.tagName]
+		if !ok && m.required {
 			return FormError{
-				Err:   fmt.Errorf("field '%s' is required", tag),
+				Err:   fmt.Errorf("field '%s' is required", m.tagName),
 				Kind:  RequiredFieldMissing,
-				Field: field.Name,
+				Field: m.name,
 			}
 		}
 
-		// set the value
-		fieldVal := rv.Field(i)
-
-		if err := setField(field.Name, fieldVal, value, timezone); err != nil {
-			return FormError{
-				Err:   err,
-				Kind:  ParseError,
-				Field: field.Name,
-			}
+		fieldVal := rv.Field(m.index)
+		if err := setField(m.name, fieldVal, value, timezone); err != nil {
+			return FormError{Err: err, Kind: ParseError, Field: m.name}
 		}
 	}
 	return nil
@@ -404,7 +437,7 @@ func setField(name string, fieldVal reflect.Value, value any, timezone ...*time.
 		return handleSlice(name, fieldVal, value, tz)
 
 	case reflect.Struct:
-		if fieldVal.Type() == reflect.TypeOf(time.Time{}) {
+		if fieldVal.Type() == reflect.TypeFor[time.Time]() {
 			s, err := toString(value)
 			if err != nil {
 				return err
@@ -535,7 +568,7 @@ func handleSlice(name string, fieldVal reflect.Value, value any, timezone *time.
 		fieldVal.Set(slice)
 	case reflect.Struct:
 		// could be time.Time
-		if fieldVal.Type().Elem() == reflect.TypeOf(time.Time{}) {
+		if fieldVal.Type().Elem() == reflect.TypeFor[time.Time]() {
 			for i, v := range valueSlice {
 				t, err := ParseTime(v, timezone)
 				if err != nil {
@@ -614,7 +647,7 @@ type FormScanner interface {
 
 // QueryParser parses the query string and stores the result in v.
 func (c *Context) QueryParser(v any, tag ...string) error {
-	var tagName string = "query"
+	var tagName = "query"
 	if len(tag) > 0 {
 		tagName = tag[0]
 	}

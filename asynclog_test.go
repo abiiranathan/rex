@@ -60,14 +60,12 @@ func TestAsyncLogHandlerConcurrentUse(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for g := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			logger := slog.New(async.WithGroup("worker"))
 			for i := range 100 {
 				logger.Info("msg", "g", g, "i", i)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	async.Close()

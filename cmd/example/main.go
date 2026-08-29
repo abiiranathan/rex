@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -82,7 +83,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	defer server.Shutdown()
+	defer server.Shutdown(context.Background())
 
 	log.Printf("Listening on %v\n", server.Addr)
 	log.Fatalln(server.ListenAndServe())
